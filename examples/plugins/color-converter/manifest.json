@@ -1,0 +1,18 @@
+{
+  "id": "color-converter",
+  "name": {
+    "zh-CN": "颜色转换器",
+    "en": "Color Converter"
+  },
+  "version": "0.1.0",
+  "matcher": "matcher.js",
+  "popup": {
+    "entry": "popup.html",
+    "width": 380,
+    "height": 300
+  },
+  "permissions": {
+    "openExternal": false,
+    "storage": false
+  }
+}
