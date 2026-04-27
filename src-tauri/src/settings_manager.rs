@@ -11,6 +11,8 @@ pub enum SettingsError {
     Io(#[from] io::Error),
     #[error("failed to parse settings json: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid plugin id for storage: {0}")]
+    InvalidPluginId(String),
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +57,7 @@ impl SettingsManager {
         self.ensure_dirs()?;
         let path = self.root_dir.join("config.json");
         let content = serde_json::to_string_pretty(config)?;
-        fs::write(path, content)?;
+        atomic_write(&path, content)?;
         Ok(())
     }
 
@@ -81,12 +83,13 @@ impl SettingsManager {
         self.write_storage(plugin_id, &map)
     }
 
-    fn storage_path(&self, plugin_id: &str) -> PathBuf {
-        self.plugin_storage_dir().join(format!("{plugin_id}.json"))
+    fn storage_path(&self, plugin_id: &str) -> Result<PathBuf, SettingsError> {
+        validate_plugin_id(plugin_id)?;
+        Ok(self.plugin_storage_dir().join(format!("{plugin_id}.json")))
     }
 
     fn read_storage(&self, plugin_id: &str) -> Result<PluginStorageMap, SettingsError> {
-        let path = self.storage_path(plugin_id);
+        let path = self.storage_path(plugin_id)?;
         if !path.exists() {
             return Ok(PluginStorageMap::default());
         }
@@ -97,10 +100,34 @@ impl SettingsManager {
 
     fn write_storage(&self, plugin_id: &str, map: &PluginStorageMap) -> Result<(), SettingsError> {
         self.ensure_dirs()?;
-        let path = self.storage_path(plugin_id);
-        fs::write(path, serde_json::to_string_pretty(map)?)?;
+        let path = self.storage_path(plugin_id)?;
+        atomic_write(&path, serde_json::to_string_pretty(map)?)?;
         Ok(())
     }
+}
+
+fn validate_plugin_id(plugin_id: &str) -> Result<(), SettingsError> {
+    let is_valid = !plugin_id.is_empty()
+        && plugin_id
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
+
+    if is_valid {
+        Ok(())
+    } else {
+        Err(SettingsError::InvalidPluginId(plugin_id.to_string()))
+    }
+}
+
+fn atomic_write(path: &PathBuf, content: String) -> Result<(), SettingsError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = path.with_extension("tmp");
+    fs::write(&temp_path, content)?;
+    fs::rename(temp_path, path)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -161,5 +188,42 @@ mod tests {
 
         manager.storage_remove("quick-search", "engine").unwrap();
         assert_eq!(manager.storage_get("quick-search", "engine").unwrap(), None);
+    }
+
+    #[test]
+    fn rejects_unsafe_plugin_storage_ids() {
+        let root_dir = temp_dir("invalid-storage-id");
+        let manager = SettingsManager::new(root_dir.clone());
+
+        for plugin_id in ["../config", "nested/id", ""] {
+            assert!(matches!(
+                manager.storage_set(plugin_id, "engine", serde_json::json!("google")),
+                Err(SettingsError::InvalidPluginId(_))
+            ));
+            assert!(matches!(
+                manager.storage_get(plugin_id, "engine"),
+                Err(SettingsError::InvalidPluginId(_))
+            ));
+            assert!(matches!(
+                manager.storage_remove(plugin_id, "engine"),
+                Err(SettingsError::InvalidPluginId(_))
+            ));
+        }
+
+        assert!(!root_dir.join("config.json").exists());
+    }
+
+    #[test]
+    fn accepts_filename_safe_plugin_storage_ids() {
+        let manager = SettingsManager::new(temp_dir("valid-storage-id"));
+
+        manager
+            .storage_set("quick-search", "engine", serde_json::json!("google"))
+            .unwrap();
+
+        assert_eq!(
+            manager.storage_get("quick-search", "engine").unwrap(),
+            Some(serde_json::json!("google"))
+        );
     }
 }
