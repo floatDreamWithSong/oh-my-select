@@ -26,7 +26,11 @@ describe("color converter matcher", () => {
     "rgba(34, 197)",
     "rgb(34 197 94 / 140%)",
     "hsl(142 71 45)",
+    "hsl(142,71%,45%,)",
     "oklch(0.72 0.19)",
+    "rgb(34,,197,94)",
+    "rgb(34,197,94,)",
+    "rgb(34,197,94,0.5,0.6)",
     "#12",
     "#xyzxyz",
   ])("rejects %s", (selectedText) => {

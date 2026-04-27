@@ -85,10 +85,13 @@ function splitColorArgs(body) {
   }
 
   if (body.includes(",")) {
-    const parts = body
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
+    const parts = body.split(",").map((part) => part.trim())
+    if (
+      (parts.length !== 3 && parts.length !== 4) ||
+      parts.some((part) => !part)
+    ) {
+      return null
+    }
 
     return {
       channels: parts.slice(0, 3),
