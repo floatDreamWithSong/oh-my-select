@@ -1,4 +1,5 @@
 pub mod models;
+pub mod plugin_registry;
 pub mod settings_manager;
 
 use tauri_plugin_opener::OpenerExt;
