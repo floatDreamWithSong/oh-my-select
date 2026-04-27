@@ -50,12 +50,22 @@ impl PopupRuntimeState {
     pub fn get(&self, selection_id: &str) -> Option<PopupSelection> {
         self.selections.get(selection_id).cloned()
     }
+
+    pub fn remove(&mut self, selection_id: &str) -> Option<PopupSelection> {
+        self.selections.remove(selection_id)
+    }
+
+    pub fn clear(&mut self) {
+        self.selections.clear();
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum PopupManagerError {
     #[error("failed to create popup window: {0}")]
     Window(#[from] tauri::Error),
+    #[error("failed to resolve popup monitor position")]
+    PositionUnavailable,
 }
 
 pub fn next_selection_id() -> String {
@@ -111,34 +121,29 @@ pub fn show_selection_popup(
     mouse_x: f64,
     mouse_y: f64,
 ) -> Result<(), PopupManagerError> {
+    let popup_w = plugin.manifest.popup.width as f64;
+    let popup_h = plugin.manifest.popup.height as f64;
+    let position = resolve_popup_position(app, mouse_x, mouse_y, popup_w, popup_h)
+        .ok_or(PopupManagerError::PositionUnavailable)?;
+
     close_selection_popup(app);
 
     let url = format!("/plugin-popup?selectionId={selection_id}");
     let popup = WebviewWindowBuilder::new(app, "selection-popup", WebviewUrl::App(url.into()))
         .title("")
-        .inner_size(
-            plugin.manifest.popup.width as f64,
-            plugin.manifest.popup.height as f64,
-        )
+        .inner_size(popup_w, popup_h)
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .visible(true)
+        .visible(false)
         .focused(false)
         .build()?;
 
-    if let Some(position) = resolve_popup_position(
-        app,
-        mouse_x,
-        mouse_y,
-        plugin.manifest.popup.width as f64,
-        plugin.manifest.popup.height as f64,
-    ) {
-        popup.set_position(tauri::Position::Logical(LogicalPosition::new(
-            position.x, position.y,
-        )))?;
-    }
+    popup.set_position(tauri::Position::Logical(LogicalPosition::new(
+        position.x, position.y,
+    )))?;
+    popup.show()?;
 
     Ok(())
 }
@@ -203,6 +208,83 @@ fn resolve_popup_position_for_monitors(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{
+        InstalledPlugin, LanguagePreference, LocalizedText, PluginManifest, PluginPermissions,
+        PluginViewContext, PopupManifest,
+    };
+
+    fn test_selection(selection_id: &str, selected_text: &str) -> PopupSelection {
+        let plugin = InstalledPlugin {
+            id: "quick-search".to_string(),
+            manifest: PluginManifest {
+                id: "quick-search".to_string(),
+                name: LocalizedText {
+                    zh_cn: None,
+                    en: Some("Quick Search".to_string()),
+                },
+                version: "1.0.0".to_string(),
+                matcher: ".*".to_string(),
+                popup: PopupManifest {
+                    entry: "index.html".to_string(),
+                    width: 320,
+                    height: 180,
+                },
+                settings: None,
+                permissions: PluginPermissions::default(),
+            },
+            enabled: true,
+            has_settings: false,
+        };
+        let context = PluginViewContext {
+            selected_text: Some(selected_text.to_string()),
+            locale: "en-US".to_string(),
+            language_preference: LanguagePreference::En,
+            plugin_id: plugin.id.clone(),
+            plugin_version: plugin.manifest.version.clone(),
+            app_version: "0.1.0".to_string(),
+        };
+
+        PopupSelection {
+            selection_id: selection_id.to_string(),
+            plugin,
+            context,
+        }
+    }
+
+    #[test]
+    fn runtime_state_get_clones_without_removing_selection() {
+        let mut state = PopupRuntimeState::default();
+        state.insert(test_selection("1", "hello"));
+
+        let first = state.get("1").unwrap();
+        let second = state.get("1").unwrap();
+
+        assert_eq!(first.context.selected_text.as_deref(), Some("hello"));
+        assert_eq!(second.context.selected_text.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn runtime_state_remove_evicts_selection() {
+        let mut state = PopupRuntimeState::default();
+        state.insert(test_selection("1", "hello"));
+
+        let removed = state.remove("1").unwrap();
+
+        assert_eq!(removed.context.selected_text.as_deref(), Some("hello"));
+        assert!(state.get("1").is_none());
+    }
+
+    #[test]
+    fn runtime_state_clear_evicts_all_selections() {
+        let mut state = PopupRuntimeState::default();
+        state.insert(test_selection("1", "hello"));
+        state.insert(test_selection("2", "world"));
+
+        state.clear();
+
+        assert!(state.get("1").is_none());
+        assert!(state.get("2").is_none());
+    }
 
     #[test]
     fn positions_popup_below_and_right_when_space_exists() {
