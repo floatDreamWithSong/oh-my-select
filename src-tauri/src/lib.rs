@@ -1,4 +1,3 @@
-use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -36,13 +35,9 @@ fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(external_navigation_plugin())
         .invoke_handler(tauri::generate_handler![greet])
-        .on_page_load(|webview, payload| {
-            if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
-                let _ = webview.window().show();
-            }
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
