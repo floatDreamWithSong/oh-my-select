@@ -55,6 +55,7 @@ export function PopupHost({ selectionId }: { selectionId: string }) {
   return (
     <PluginFrame
       pluginId={state.payload.plugin.id}
+      viewKind="popup"
       entryUrl={state.payload.entryUrl}
       title={state.payload.plugin.manifest.id}
       className="h-svh w-screen border-0"
