@@ -12,18 +12,17 @@ bun run tauri dev
 
 The app starts hidden in the system tray. Click the tray icon to open Settings.
 
-## Example Plugin
+## Example Plugins
 
-An example local plugin lives at:
+Example local plugins live under:
 
 ```text
-examples/plugins/quick-search
+examples/plugins
 ```
 
-Open Settings, import that folder, select text in another application, and the plugin popup should appear near the cursor.
+Open Settings, import one of the plugin folders, select text in another application, and the matching plugin popup should appear near the cursor.
 
-The example plugin includes:
+Included examples:
 
-- `matcher.js`: accepts non-empty selected text.
-- `popup.html`: displays the selected text and opens a search URL.
-- `settings.html`: stores the search URL prefix used by the popup.
+- `quick-search`: accepts non-empty selected text, displays it, and opens a configurable search URL.
+- `color-converter`: accepts supported CSS color values, previews the color, and copies HEX, RGB, HSL, or OKLCH output.
