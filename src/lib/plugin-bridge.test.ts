@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
+  appendPluginBridgeSession,
   assertPopupBridgeRequest,
-  createPluginBridgeSession,
   getRequiredStringBridgeArg,
   isPluginBridgeRequest,
-  recordPluginFrameLoad,
-  resetPluginBridgeSession,
 } from "./plugin-bridge"
 
 describe("isPluginBridgeRequest", () => {
@@ -16,6 +14,7 @@ describe("isPluginBridgeRequest", () => {
         id: "1",
         pluginId: "quick-search",
         viewKind: "popup",
+        bridgeSession: "session-1",
         method: "storage.get",
         args: ["engine"],
       })
@@ -33,6 +32,7 @@ describe("isPluginBridgeRequest", () => {
         id: "1",
         pluginId: "quick-search",
         viewKind: "panel",
+        bridgeSession: "session-1",
         method: "storage.get",
         args: ["engine"],
       })
@@ -44,7 +44,21 @@ describe("isPluginBridgeRequest", () => {
         id: "1",
         pluginId: "quick-search",
         viewKind: "settings",
+        bridgeSession: "session-1",
         method: "storage.clear",
+        args: ["engine"],
+      })
+    ).toBe(false)
+  })
+
+  it("rejects requests without a bridge session", () => {
+    expect(
+      isPluginBridgeRequest({
+        source: "oh-my-select-plugin",
+        id: "1",
+        pluginId: "quick-search",
+        viewKind: "popup",
+        method: "storage.get",
         args: ["engine"],
       })
     ).toBe(false)
@@ -60,6 +74,7 @@ describe("getRequiredStringBridgeArg", () => {
           id: "1",
           pluginId: "quick-search",
           viewKind: "popup",
+          bridgeSession: "session-1",
           method: "storage.get",
           args: ["engine"],
         },
@@ -76,6 +91,7 @@ describe("getRequiredStringBridgeArg", () => {
           id: "1",
           pluginId: "quick-search",
           viewKind: "popup",
+          bridgeSession: "session-1",
           method: "openExternal",
           args: [],
         },
@@ -90,6 +106,7 @@ describe("getRequiredStringBridgeArg", () => {
           id: "1",
           pluginId: "quick-search",
           viewKind: "popup",
+          bridgeSession: "session-1",
           method: "storage.remove",
           args: [undefined],
         },
@@ -107,6 +124,7 @@ describe("assertPopupBridgeRequest", () => {
         id: "1",
         pluginId: "quick-search",
         viewKind: "settings",
+        bridgeSession: "session-1",
         method: "closePopup",
         args: [],
       })
@@ -114,49 +132,30 @@ describe("assertPopupBridgeRequest", () => {
   })
 })
 
-describe("plugin frame bridge session", () => {
-  it("enables bridge for the first oms-plugin load", () => {
-    const session = createPluginBridgeSession("oms-plugin://quick-search/popup")
-
-    expect(session.bridgeEnabled).toBe(false)
-    expect(recordPluginFrameLoad(session)).toEqual({
-      bridgeEnabled: true,
-      shouldResetFrame: false,
-    })
-    expect(session.bridgeEnabled).toBe(true)
+describe("appendPluginBridgeSession", () => {
+  it("adds the bridge session while preserving existing query params", () => {
+    expect(
+      appendPluginBridgeSession(
+        "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=abc",
+        "session-1"
+      )
+    ).toBe(
+      "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=abc&bridgeSession=session-1"
+    )
   })
 
-  it("disables bridge and requests reset after subsequent loads", () => {
-    const session = createPluginBridgeSession("oms-plugin://quick-search/popup")
-
-    recordPluginFrameLoad(session)
-
-    expect(recordPluginFrameLoad(session)).toEqual({
-      bridgeEnabled: false,
-      shouldResetFrame: true,
-    })
-    expect(session.bridgeEnabled).toBe(false)
+  it("replaces stale bridge session params", () => {
+    expect(
+      appendPluginBridgeSession(
+        "oms-plugin://quick-search/settings.html?bridgeSession=old",
+        "session-2"
+      )
+    ).toBe("oms-plugin://quick-search/settings.html?bridgeSession=session-2")
   })
 
-  it("keeps bridge disabled for non-plugin entry URLs", () => {
-    const session = createPluginBridgeSession("https://example.com/popup")
-
-    expect(recordPluginFrameLoad(session)).toEqual({
-      bridgeEnabled: false,
-      shouldResetFrame: true,
-    })
-  })
-
-  it("resets load tracking on prop-driven entry URL changes", () => {
-    const session = createPluginBridgeSession("oms-plugin://old/popup")
-
-    recordPluginFrameLoad(session)
-    recordPluginFrameLoad(session)
-    resetPluginBridgeSession(session, "oms-plugin://new/popup")
-
-    expect(recordPluginFrameLoad(session)).toEqual({
-      bridgeEnabled: true,
-      shouldResetFrame: false,
-    })
+  it("throws for non-plugin URLs", () => {
+    expect(() =>
+      appendPluginBridgeSession("https://example.com/popup.html", "session-1")
+    ).toThrow("Plugin iframe entry URL must use oms-plugin:")
   })
 })
