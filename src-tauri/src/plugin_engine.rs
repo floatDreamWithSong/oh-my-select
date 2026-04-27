@@ -3,7 +3,10 @@ use rquickjs::{Context, Runtime};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+
+const MATCHER_TIMEOUT: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Error)]
 pub enum PluginEngineError {
@@ -11,6 +14,8 @@ pub enum PluginEngineError {
     Io(#[from] std::io::Error),
     #[error("failed to serialize matcher context: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("failed to execute matcher: {0}")]
+    JavaScript(#[from] rquickjs::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +78,7 @@ impl PluginEngine {
             "pluginId": plugin.id,
             "pluginVersion": plugin.manifest.version,
         }))?;
-        Ok(evaluate_matcher(&normalized, &context_json).unwrap_or(false))
+        Ok(evaluate_matcher(&normalized, &context_json)?)
     }
 }
 
@@ -104,6 +109,8 @@ fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, rquickjs::
     let runtime = Runtime::new()?;
     runtime.set_memory_limit(8 * 1024 * 1024);
     runtime.set_max_stack_size(256 * 1024);
+    let deadline = Instant::now() + MATCHER_TIMEOUT;
+    runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime)?;
 
     context.with(|ctx| {
@@ -236,6 +243,102 @@ mod tests {
                 &root,
                 "broken",
                 "export function match() { throw new Error('bad') }",
+                true,
+            ),
+            plugin(
+                &root,
+                "working",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "en")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "working");
+    }
+
+    #[test]
+    fn propagates_javascript_errors_from_match_plugin() {
+        let root = temp_dir("js-error");
+        let broken = plugin(
+            &root,
+            "broken",
+            "export function match(context) { return",
+            true,
+        );
+        let engine = PluginEngine::new(root);
+
+        let error = engine.match_plugin(&broken, "hello", "en").unwrap_err();
+
+        assert!(matches!(error, PluginEngineError::JavaScript(_)));
+    }
+
+    #[test]
+    fn continues_after_missing_match_function() {
+        let root = temp_dir("missing-match");
+        let plugins = vec![
+            plugin(
+                &root,
+                "broken",
+                "export function other() { return true }",
+                true,
+            ),
+            plugin(
+                &root,
+                "working",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "en")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "working");
+    }
+
+    #[test]
+    fn passes_expected_context_shape_to_matcher() {
+        let root = temp_dir("context-shape");
+        let plugins = vec![plugin(
+            &root,
+            "context",
+            r#"
+            export function match(context) {
+                return context.selectedText === 'hello'
+                    && context.locale === 'zh-CN'
+                    && context.pluginId === 'context'
+                    && context.pluginVersion === '0.1.0';
+            }
+            "#,
+            true,
+        )];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "zh-CN")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "context");
+    }
+
+    #[test]
+    fn continues_after_matcher_timeout() {
+        let root = temp_dir("timeout");
+        let plugins = vec![
+            plugin(
+                &root,
+                "loop",
+                "export function match() { while (true) {} }",
                 true,
             ),
             plugin(
