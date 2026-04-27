@@ -5,7 +5,9 @@ pub mod plugin_engine;
 pub mod plugin_protocol;
 pub mod plugin_registry;
 pub mod popup_manager;
+pub mod selection_monitor;
 pub mod settings_manager;
+pub mod tray;
 
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -48,8 +50,10 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            tray::setup_tray(app)?;
             let state = app_state::AppState::from_app(app.handle())?;
             app.manage(state);
+            selection_monitor::start_input_monitoring(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
