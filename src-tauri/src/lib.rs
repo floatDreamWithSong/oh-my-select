@@ -1,4 +1,15 @@
-use tauri::webview::PageLoadEvent;
+pub mod app_state;
+pub mod commands;
+pub mod models;
+pub mod plugin_engine;
+pub mod plugin_protocol;
+pub mod plugin_registry;
+pub mod popup_manager;
+pub mod selection_monitor;
+pub mod settings_manager;
+pub mod tray;
+
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -34,15 +45,36 @@ fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(external_navigation_plugin())
-        .invoke_handler(tauri::generate_handler![greet])
-        .on_page_load(|webview, payload| {
-            if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
-                let _ = webview.window().show();
-            }
+    let builder = tauri::Builder::default();
+    let builder = plugin_protocol::register_plugin_protocol(builder);
+
+    builder
+        .setup(|app| {
+            tray::setup_tray(app)?;
+            let state = app_state::AppState::from_app(app.handle())?;
+            app.manage(state);
+            selection_monitor::start_input_monitoring(app.handle().clone());
+            Ok(())
         })
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(external_navigation_plugin())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::get_settings_snapshot,
+            commands::set_language_preference,
+            commands::import_plugin_folder,
+            commands::set_plugin_enabled,
+            commands::set_plugin_order,
+            commands::remove_plugin,
+            commands::get_popup_payload,
+            commands::get_plugin_settings_payload,
+            commands::plugin_storage_get,
+            commands::plugin_storage_set,
+            commands::plugin_storage_remove,
+            commands::bridge_open_external,
+            commands::bridge_close_popup
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
