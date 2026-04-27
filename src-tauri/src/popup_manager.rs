@@ -20,6 +20,14 @@ pub struct PopupPosition {
     pub y: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionPopupHitTest {
+    NoPopup,
+    Inside,
+    Outside,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct RawMonitorBounds {
     x: f64,
@@ -110,6 +118,54 @@ pub fn clamp_popup_position(
     PopupPosition {
         x: x.max(min_x).min(max_x),
         y: y.max(min_y).min(max_y),
+    }
+}
+
+pub fn point_in_popup_bounds(mouse_x: f64, mouse_y: f64, bounds: &MonitorBounds) -> bool {
+    mouse_x >= bounds.x
+        && mouse_x < bounds.x + bounds.width
+        && mouse_y >= bounds.y
+        && mouse_y < bounds.y + bounds.height
+}
+
+pub fn selection_popup_hit_test(
+    app: &AppHandle,
+    mouse_x: f64,
+    mouse_y: f64,
+) -> SelectionPopupHitTest {
+    let Some(window) = app.get_webview_window("selection-popup") else {
+        return SelectionPopupHitTest::NoPopup;
+    };
+
+    let scale = match window.scale_factor() {
+        Ok(scale) if scale > 0.0 => scale,
+        Ok(_) | Err(_) => return SelectionPopupHitTest::Unknown,
+    };
+    let position = match window.outer_position() {
+        Ok(position) => position,
+        Err(_) => return SelectionPopupHitTest::Unknown,
+    };
+    let size = match window.outer_size() {
+        Ok(size) => size,
+        Err(_) => return SelectionPopupHitTest::Unknown,
+    };
+
+    #[cfg(target_os = "macos")]
+    let (mouse_x, mouse_y) = (mouse_x, mouse_y);
+    #[cfg(not(target_os = "macos"))]
+    let (mouse_x, mouse_y) = (mouse_x / scale, mouse_y / scale);
+
+    let bounds = MonitorBounds {
+        x: position.x as f64 / scale,
+        y: position.y as f64 / scale,
+        width: size.width as f64 / scale,
+        height: size.height as f64 / scale,
+    };
+
+    if point_in_popup_bounds(mouse_x, mouse_y, &bounds) {
+        SelectionPopupHitTest::Inside
+    } else {
+        SelectionPopupHitTest::Outside
     }
 }
 
@@ -301,6 +357,21 @@ mod tests {
         };
         let pos = clamp_popup_position(100.0, 120.0, 320.0, 180.0, &monitor);
         assert_eq!(pos, PopupPosition { x: 110.0, y: 130.0 });
+    }
+
+    #[test]
+    fn detects_points_inside_popup_bounds() {
+        let bounds = MonitorBounds {
+            x: 100.0,
+            y: 200.0,
+            width: 320.0,
+            height: 180.0,
+        };
+
+        assert!(point_in_popup_bounds(100.0, 200.0, &bounds));
+        assert!(point_in_popup_bounds(419.0, 379.0, &bounds));
+        assert!(!point_in_popup_bounds(420.0, 379.0, &bounds));
+        assert!(!point_in_popup_bounds(419.0, 380.0, &bounds));
     }
 
     #[test]
