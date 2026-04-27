@@ -66,3 +66,55 @@ export function setPluginOrder(pluginIds: Array<string>) {
 export function removePlugin(pluginId: string) {
   return invoke<AppSettingsSnapshot>("remove_plugin", { pluginId })
 }
+
+export type PluginViewContext = {
+  selectedText?: string | null
+  locale: "zh-CN" | "en"
+  languagePreference: LanguagePreference
+  pluginId: string
+  pluginVersion: string
+  appVersion: string
+}
+
+export type PopupPayload = {
+  selectionId: string
+  plugin: InstalledPlugin
+  context: PluginViewContext
+  entryUrl: string
+}
+
+export type PluginSettingsPayload = {
+  plugin: InstalledPlugin
+  entryUrl?: string | null
+  context: PluginViewContext
+}
+
+export function getPopupPayload(selectionId: string) {
+  return invoke<PopupPayload>("get_popup_payload", { selectionId })
+}
+
+export function getPluginSettingsPayload(pluginId: string) {
+  return invoke<PluginSettingsPayload>("get_plugin_settings_payload", {
+    pluginId,
+  })
+}
+
+export function bridgeOpenExternal(pluginId: string, url: string) {
+  return invoke<void>("bridge_open_external", { pluginId, url })
+}
+
+export function bridgeClosePopup() {
+  return invoke<void>("bridge_close_popup")
+}
+
+export function pluginStorageGet(pluginId: string, key: string) {
+  return invoke<unknown>("plugin_storage_get", { pluginId, key })
+}
+
+export function pluginStorageSet(pluginId: string, key: string, value: unknown) {
+  return invoke<void>("plugin_storage_set", { pluginId, key, value })
+}
+
+export function pluginStorageRemove(pluginId: string, key: string) {
+  return invoke<void>("plugin_storage_remove", { pluginId, key })
+}
