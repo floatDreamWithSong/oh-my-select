@@ -1,10 +1,12 @@
 pub mod app_state;
 pub mod models;
 pub mod plugin_engine;
+pub mod plugin_protocol;
 pub mod plugin_registry;
 pub mod popup_manager;
 pub mod settings_manager;
 
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -40,7 +42,15 @@ fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    let builder = plugin_protocol::register_plugin_protocol(builder);
+
+    builder
+        .setup(|app| {
+            let state = app_state::AppState::from_app(app.handle())?;
+            app.manage(state);
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(external_navigation_plugin())
