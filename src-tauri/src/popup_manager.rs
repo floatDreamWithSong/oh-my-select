@@ -20,6 +20,15 @@ pub struct PopupPosition {
     pub y: f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RawMonitorBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct PopupSelection {
     pub selection_id: String,
@@ -142,30 +151,43 @@ fn resolve_popup_position(
     popup_h: f64,
 ) -> Option<PopupPosition> {
     let monitors = app.available_monitors().ok()?;
-    for monitor in monitors {
-        let scale = monitor.scale_factor();
-        let phys_x = monitor.position().x as f64;
-        let phys_y = monitor.position().y as f64;
-        let phys_w = monitor.size().width as f64;
-        let phys_h = monitor.size().height as f64;
+    let monitors = monitors.into_iter().map(|monitor| RawMonitorBounds {
+        x: monitor.position().x as f64,
+        y: monitor.position().y as f64,
+        width: monitor.size().width as f64,
+        height: monitor.size().height as f64,
+        scale: monitor.scale_factor(),
+    });
 
-        let mouse_in_monitor = mouse_x >= phys_x
-            && mouse_x < phys_x + phys_w
-            && mouse_y >= phys_y
-            && mouse_y < phys_y + phys_h;
+    resolve_popup_position_for_monitors(mouse_x, mouse_y, popup_w, popup_h, monitors)
+}
+
+fn resolve_popup_position_for_monitors(
+    mouse_x: f64,
+    mouse_y: f64,
+    popup_w: f64,
+    popup_h: f64,
+    monitors: impl IntoIterator<Item = RawMonitorBounds>,
+) -> Option<PopupPosition> {
+    for monitor in monitors {
+        #[cfg(target_os = "macos")]
+        let (mouse_x_logical, mouse_y_logical) = (mouse_x, mouse_y);
+        #[cfg(not(target_os = "macos"))]
+        let (mouse_x_logical, mouse_y_logical) = (mouse_x / monitor.scale, mouse_y / monitor.scale);
+
+        let bounds = MonitorBounds {
+            x: monitor.x / monitor.scale,
+            y: monitor.y / monitor.scale,
+            width: monitor.width / monitor.scale,
+            height: monitor.height / monitor.scale,
+        };
+
+        let mouse_in_monitor = mouse_x_logical >= bounds.x
+            && mouse_x_logical < bounds.x + bounds.width
+            && mouse_y_logical >= bounds.y
+            && mouse_y_logical < bounds.y + bounds.height;
 
         if mouse_in_monitor {
-            #[cfg(target_os = "macos")]
-            let (mouse_x_logical, mouse_y_logical) = (mouse_x, mouse_y);
-            #[cfg(not(target_os = "macos"))]
-            let (mouse_x_logical, mouse_y_logical) = (mouse_x / scale, mouse_y / scale);
-
-            let bounds = MonitorBounds {
-                x: phys_x / scale,
-                y: phys_y / scale,
-                width: phys_w / scale,
-                height: phys_h / scale,
-            };
             return Some(clamp_popup_position(
                 mouse_x_logical,
                 mouse_y_logical,
@@ -239,6 +261,28 @@ mod tests {
                 x: -1270.0,
                 y: -710.0
             }
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolves_macos_logical_mouse_coordinates_against_logical_monitor_bounds() {
+        let monitors = [RawMonitorBounds {
+            x: 2880.0,
+            y: 0.0,
+            width: 2880.0,
+            height: 1800.0,
+            scale: 2.0,
+        }];
+
+        let pos = resolve_popup_position_for_monitors(1500.0, 200.0, 320.0, 180.0, monitors);
+
+        assert_eq!(
+            pos,
+            Some(PopupPosition {
+                x: 1510.0,
+                y: 210.0
+            })
         );
     }
 }
