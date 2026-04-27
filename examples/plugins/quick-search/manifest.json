@@ -1,0 +1,21 @@
+{
+  "id": "quick-search",
+  "name": {
+    "zh-CN": "快速搜索",
+    "en": "Quick Search"
+  },
+  "version": "0.1.0",
+  "matcher": "matcher.js",
+  "popup": {
+    "entry": "popup.html",
+    "width": 360,
+    "height": 220
+  },
+  "settings": {
+    "entry": "settings.html"
+  },
+  "permissions": {
+    "openExternal": true,
+    "storage": true
+  }
+}
