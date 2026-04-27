@@ -1,21 +1,29 @@
-# TanStack Start + shadcn/ui
+# oh-my-select
 
-This is a template for a new TanStack Start project with React, TypeScript, and shadcn/ui.
+oh-my-select is a tray-first Tauri app for showing plugin-owned popup views when text is selected.
 
-## Adding components
+## Development
 
-To add components to your app, run the following command:
+Run the desktop app:
 
 ```bash
-npx shadcn@latest add button
+bun run tauri dev
 ```
 
-This will place the ui components in the `components` directory.
+The app starts hidden in the system tray. Click the tray icon to open Settings.
 
-## Using components
+## Example Plugin
 
-To use the components in your app, import them as follows:
+An example local plugin lives at:
 
-```tsx
-import { Button } from "@/components/ui/button";
+```text
+examples/plugins/quick-search
 ```
+
+Open Settings, import that folder, select text in another application, and the plugin popup should appear near the cursor.
+
+The example plugin includes:
+
+- `matcher.js`: accepts non-empty selected text.
+- `popup.html`: displays the selected text and opens a search URL.
+- `settings.html`: stores the search URL prefix used by the popup.

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #101828;
+      }
+
+      main {
+        display: grid;
+        gap: 12px;
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.3;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+      }
+
+      input {
+        height: 34px;
+        border: 1px solid #d0d5dd;
+        padding: 0 10px;
+      }
+
+      button {
+        width: fit-content;
+        height: 32px;
+        border: 1px solid #0f766e;
+        background: #0f766e;
+        color: #ffffff;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Quick Search</h1>
+      <label>
+        <span id="engine-label">Search engine URL</span>
+        <input id="engine" value="https://www.google.com/search?q=" />
+      </label>
+      <button id="save">Save</button>
+    </main>
+    <script>
+      const input = document.getElementById("engine");
+      const title = document.getElementById("title");
+      const engineLabel = document.getElementById("engine-label");
+      const saveButton = document.getElementById("save");
+
+      if (window.ohMySelect.context.locale === "zh-CN") {
+        title.textContent = "快速搜索";
+        engineLabel.textContent = "搜索引擎地址";
+        saveButton.textContent = "保存";
+      }
+
+      window.ohMySelect.storage.get("engine").then((value) => {
+        if (typeof value === "string") {
+          input.value = value;
+        }
+      });
+
+      saveButton.addEventListener("click", () => {
+        window.ohMySelect.storage.set("engine", input.value);
+      });
+    </script>
+  </body>
+</html>
