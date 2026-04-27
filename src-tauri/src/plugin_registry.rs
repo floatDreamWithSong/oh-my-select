@@ -83,7 +83,13 @@ impl PluginRegistry {
             return Err(error.into());
         }
 
-        let mut config = self.settings.load_config()?;
+        let mut config = match self.settings.load_config() {
+            Ok(config) => config,
+            Err(error) => {
+                let _ = remove_path_if_exists(&final_dir);
+                return Err(error.into());
+            }
+        };
         config.plugins.push(PluginConfigEntry {
             id: manifest.id.clone(),
             enabled: true,
@@ -159,11 +165,24 @@ impl PluginRegistry {
             return Err(PluginRegistryError::MissingPlugin(id.to_string()));
         }
 
-        self.settings.save_config(&config)?;
+        let final_dir = self.plugin_dir(id);
+        let temp_dir = self.settings.plugins_dir().join(format!(".removing-{id}"));
+        let moved_plugin_dir = final_dir.exists();
 
-        let dir = self.plugin_dir(id);
-        if dir.exists() {
-            fs::remove_dir_all(dir)?;
+        if moved_plugin_dir {
+            remove_path_if_exists(&temp_dir)?;
+            fs::rename(&final_dir, &temp_dir)?;
+        }
+
+        if let Err(error) = self.settings.save_config(&config) {
+            if moved_plugin_dir && temp_dir.exists() && !final_dir.exists() {
+                let _ = fs::rename(&temp_dir, &final_dir);
+            }
+            return Err(error.into());
+        }
+
+        if moved_plugin_dir {
+            fs::remove_dir_all(temp_dir)?;
         }
         Ok(())
     }
@@ -545,6 +564,25 @@ mod tests {
     }
 
     #[test]
+    fn cleans_imported_directory_if_config_load_fails_after_rename() {
+        let source_root = temp_dir("load-failure-source");
+        let app_root = temp_dir("load-failure-app");
+        let source = write_plugin(&source_root, "load-failure", false);
+        let registry = PluginRegistry::new(SettingsManager::new(app_root.clone()));
+        fs::create_dir_all(app_root.join("plugins")).unwrap();
+        fs::write(app_root.join("config.json"), "{ broken json").unwrap();
+
+        let error = registry.import_folder(&source).unwrap_err();
+
+        assert!(matches!(error, PluginRegistryError::Settings(_)));
+        assert!(!registry.plugin_dir("load-failure").exists());
+        assert!(!app_root
+            .join("plugins")
+            .join(".importing-load-failure")
+            .exists());
+    }
+
+    #[test]
     fn cleans_stale_import_temp_directory_before_import() {
         let source_root = temp_dir("stale-temp-source");
         let app_root = temp_dir("stale-temp-app");
@@ -576,5 +614,14 @@ mod tests {
 
         assert!(matches!(error, PluginRegistryError::Settings(_)));
         assert!(registry.plugin_dir("remove-save-failure").exists());
+        assert!(!app_root
+            .join("plugins")
+            .join(".removing-remove-save-failure")
+            .exists());
+
+        fs::remove_dir_all(app_root.join("config.tmp")).unwrap();
+        registry.remove_plugin("remove-save-failure").unwrap();
+
+        assert!(!registry.plugin_dir("remove-save-failure").exists());
     }
 }
