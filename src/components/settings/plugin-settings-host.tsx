@@ -75,6 +75,7 @@ export function PluginSettingsHost({
   return (
     <PluginFrame
       pluginId={state.payload.plugin.id}
+      viewKind="settings"
       entryUrl={state.payload.entryUrl}
       title={state.payload.plugin.manifest.id}
       className="min-h-svh w-full border-0"

@@ -8,12 +8,18 @@ import {
   pluginStorageSet,
 } from "@/lib/tauri-api"
 import {
+  assertPopupBridgeRequest,
+  getRequiredBridgeValueArg,
+  getRequiredStringBridgeArg,
   isPluginBridgeRequest,
   postBridgeResponse,
 } from "@/lib/plugin-bridge"
 
+type PluginFrameViewKind = PluginBridgeRequest["viewKind"]
+
 type PluginFrameProps = {
   pluginId: string
+  viewKind: PluginFrameViewKind
   entryUrl: string
   title: string
   className?: string
@@ -21,6 +27,7 @@ type PluginFrameProps = {
 
 export function PluginFrame({
   pluginId,
+  viewKind,
   entryUrl,
   title,
   className,
@@ -41,7 +48,7 @@ export function PluginFrame({
 
       const request = event.data
 
-      if (request.pluginId !== pluginId) {
+      if (request.pluginId !== pluginId || request.viewKind !== viewKind) {
         return
       }
 
@@ -66,12 +73,12 @@ export function PluginFrame({
     window.addEventListener("message", handleMessage)
 
     return () => window.removeEventListener("message", handleMessage)
-  }, [pluginId])
+  }, [pluginId, viewKind])
 
   return (
     <iframe
       ref={iframeRef}
-      sandbox="allow-scripts allow-forms allow-popups"
+      sandbox="allow-scripts allow-forms"
       src={entryUrl}
       title={title}
       className={className}
@@ -80,18 +87,30 @@ export function PluginFrame({
 }
 
 function dispatchBridgeRequest(request: PluginBridgeRequest) {
-  const [first, second] = request.args
-
   switch (request.method) {
     case "closePopup":
+      assertPopupBridgeRequest(request)
       return bridgeClosePopup()
     case "openExternal":
-      return bridgeOpenExternal(request.pluginId, String(first))
+      return bridgeOpenExternal(
+        request.pluginId,
+        getRequiredStringBridgeArg(request, 0)
+      )
     case "storage.get":
-      return pluginStorageGet(request.pluginId, String(first))
+      return pluginStorageGet(
+        request.pluginId,
+        getRequiredStringBridgeArg(request, 0)
+      )
     case "storage.set":
-      return pluginStorageSet(request.pluginId, String(first), second)
+      return pluginStorageSet(
+        request.pluginId,
+        getRequiredStringBridgeArg(request, 0),
+        getRequiredBridgeValueArg(request, 1)
+      )
     case "storage.remove":
-      return pluginStorageRemove(request.pluginId, String(first))
+      return pluginStorageRemove(
+        request.pluginId,
+        getRequiredStringBridgeArg(request, 0)
+      )
   }
 }

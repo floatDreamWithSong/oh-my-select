@@ -60,3 +60,37 @@ export function postBridgeResponse(
 ) {
   target.postMessage(response, "*")
 }
+
+export function getRequiredStringBridgeArg(
+  request: PluginBridgeRequest,
+  index: number
+) {
+  const value = request.args[index]
+
+  if (typeof value !== "string") {
+    throw new Error(
+      `Invalid bridge args for ${request.method}: expected string at args[${index}]`
+    )
+  }
+
+  return value
+}
+
+export function getRequiredBridgeValueArg(
+  request: PluginBridgeRequest,
+  index: number
+) {
+  if (request.args.length <= index) {
+    throw new Error(
+      `Invalid bridge args for ${request.method}: expected value at args[${index}]`
+    )
+  }
+
+  return request.args[index]
+}
+
+export function assertPopupBridgeRequest(request: PluginBridgeRequest) {
+  if (request.viewKind !== "popup") {
+    throw new Error("closePopup is only available from popup views")
+  }
+}
