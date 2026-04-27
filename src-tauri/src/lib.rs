@@ -1,3 +1,6 @@
+mod models;
+mod settings_manager;
+
 use tauri_plugin_opener::OpenerExt;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
