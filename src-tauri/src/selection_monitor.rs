@@ -2,10 +2,11 @@ use crate::app_state::AppState;
 use crate::plugin_engine::{build_view_context, PluginEngine};
 use crate::plugin_registry::PluginRegistry;
 use crate::popup_manager::{
-    close_selection_popup, next_selection_id, show_selection_popup, PopupSelection,
+    close_selection_popup, next_selection_id, selection_popup_hit_test, show_selection_popup,
+    PopupSelection, SelectionPopupHitTest,
 };
 use monio::{Button, Event, EventType};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -18,17 +19,92 @@ struct SelectionMonitorState {
     is_dragging: bool,
     drag_start_x: f64,
     drag_start_y: f64,
-    last_selected_text: String,
+    generation: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SelectionJob {
+    generation: u64,
+}
+
+#[derive(Clone)]
+struct SelectionJobQueue {
+    inner: Arc<SelectionJobQueueInner>,
+}
+
+struct SelectionJobQueueInner {
+    pending: Mutex<Option<SelectionJob>>,
+    available: Condvar,
+}
+
+impl SelectionJobQueue {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(SelectionJobQueueInner {
+                pending: Mutex::new(None),
+                available: Condvar::new(),
+            }),
+        }
+    }
+
+    fn enqueue_latest(&self, job: SelectionJob) {
+        let mut pending = match self.inner.pending.lock() {
+            Ok(pending) => pending,
+            Err(error) => {
+                eprintln!("Selection job queue lock failed while enqueueing: {error}");
+                return;
+            }
+        };
+        *pending = Some(job);
+        self.inner.available.notify_one();
+    }
+
+    fn wait_for_job(&self) -> Option<SelectionJob> {
+        let mut pending = match self.inner.pending.lock() {
+            Ok(pending) => pending,
+            Err(error) => {
+                eprintln!("Selection job queue lock failed while waiting: {error}");
+                return None;
+            }
+        };
+
+        loop {
+            if let Some(job) = pending.take() {
+                return Some(job);
+            }
+
+            pending = match self.inner.available.wait(pending) {
+                Ok(pending) => pending,
+                Err(error) => {
+                    eprintln!("Selection job queue wait failed: {error}");
+                    return None;
+                }
+            };
+        }
+    }
 }
 
 pub fn start_input_monitoring(app: AppHandle) {
     let monitor_state = Arc::new(Mutex::new(SelectionMonitorState::default()));
+    let job_queue = SelectionJobQueue::new();
+
+    let worker_app = app.clone();
+    let worker_state = Arc::clone(&monitor_state);
+    let worker_queue = job_queue.clone();
+    if let Err(error) = thread::Builder::new()
+        .name("oh-my-select-selection-worker".to_string())
+        .spawn(move || run_selection_worker(worker_app, worker_state, worker_queue))
+    {
+        eprintln!("Failed to start selection worker: {error}");
+    }
+
     let spawn_result = thread::Builder::new()
         .name("oh-my-select-selection-monitor".to_string())
         .spawn(move || {
             let result = monio::listen({
                 let monitor_state = Arc::clone(&monitor_state);
-                move |event| handle_input_event(&app, &monitor_state, event)
+                let job_queue = job_queue.clone();
+                move |event| handle_input_event(&app, &monitor_state, &job_queue, event)
             });
 
             if let Err(error) = result {
@@ -44,11 +120,12 @@ pub fn start_input_monitoring(app: AppHandle) {
 fn handle_input_event(
     app: &AppHandle,
     monitor_state: &Arc<Mutex<SelectionMonitorState>>,
+    job_queue: &SelectionJobQueue,
     event: &Event,
 ) {
     match event.event_type {
         EventType::MousePressed => handle_mouse_pressed(app, monitor_state, event),
-        EventType::MouseReleased => handle_mouse_released(app, monitor_state, event),
+        EventType::MouseReleased => handle_mouse_released(monitor_state, job_queue, event),
         _ => {}
     }
 }
@@ -62,6 +139,11 @@ fn handle_mouse_pressed(
         return;
     };
 
+    match selection_popup_hit_test(app, x, y) {
+        SelectionPopupHitTest::Inside | SelectionPopupHitTest::Unknown => return,
+        SelectionPopupHitTest::NoPopup | SelectionPopupHitTest::Outside => {}
+    }
+
     close_selection_popup(app);
     clear_popup_state(app);
 
@@ -72,21 +154,22 @@ fn handle_mouse_pressed(
             return;
         }
     };
+    state.generation = state.generation.wrapping_add(1);
     state.is_dragging = true;
     state.drag_start_x = x;
     state.drag_start_y = y;
 }
 
 fn handle_mouse_released(
-    app: &AppHandle,
     monitor_state: &Arc<Mutex<SelectionMonitorState>>,
+    job_queue: &SelectionJobQueue,
     event: &Event,
 ) {
     let Some((x, y)) = left_mouse_position(event) else {
         return;
     };
 
-    let should_handle = {
+    let job = {
         let mut state = match monitor_state.lock() {
             Ok(state) => state,
             Err(error) => {
@@ -100,20 +183,50 @@ fn handle_mouse_released(
         }
 
         state.is_dragging = false;
-        drag_exceeds_threshold(state.drag_start_x, state.drag_start_y, x, y)
+        if drag_exceeds_threshold(state.drag_start_x, state.drag_start_y, x, y) {
+            Some(SelectionJob {
+                generation: state.generation,
+            })
+        } else {
+            None
+        }
     };
 
-    if !should_handle {
+    if let Some(job) = job {
+        job_queue.enqueue_latest(job);
+    }
+}
+
+fn run_selection_worker(
+    app: AppHandle,
+    monitor_state: Arc<Mutex<SelectionMonitorState>>,
+    job_queue: SelectionJobQueue,
+) {
+    while let Some(job) = job_queue.wait_for_job() {
+        process_selection_job(&app, &monitor_state, job);
+    }
+}
+
+fn process_selection_job(
+    app: &AppHandle,
+    monitor_state: &Arc<Mutex<SelectionMonitorState>>,
+    job: SelectionJob,
+) {
+    thread::sleep(Duration::from_millis(SELECTION_STABILIZE_DELAY_MS));
+    if !is_current_selection_job(monitor_state, job.generation) {
         return;
     }
 
-    thread::sleep(Duration::from_millis(SELECTION_STABILIZE_DELAY_MS));
-    handle_selection(app, monitor_state);
+    handle_selection(app, monitor_state, job.generation);
 }
 
-fn handle_selection(app: &AppHandle, monitor_state: &Arc<Mutex<SelectionMonitorState>>) {
+fn handle_selection(
+    app: &AppHandle,
+    monitor_state: &Arc<Mutex<SelectionMonitorState>>,
+    generation: u64,
+) {
     let selected_text = selection::get_text().trim().to_string();
-    if selected_text.is_empty() || is_duplicate_selection(monitor_state, &selected_text) {
+    if selected_text.is_empty() || !is_current_selection_job(monitor_state, generation) {
         return;
     }
 
@@ -153,6 +266,9 @@ fn handle_selection(app: &AppHandle, monitor_state: &Arc<Mutex<SelectionMonitorS
             return;
         }
     };
+    if !is_current_selection_job(monitor_state, generation) {
+        return;
+    }
 
     let selection_id = next_selection_id();
     let context = build_view_context(
@@ -173,14 +289,16 @@ fn handle_selection(app: &AppHandle, monitor_state: &Arc<Mutex<SelectionMonitorS
         return;
     }
 
-    if let Err(error) = show_selection_popup(app, &selection_id, &matched.plugin, mouse_x, mouse_y)
-    {
-        eprintln!("Failed to show selection popup: {error}");
+    if !is_current_selection_job(monitor_state, generation) {
         remove_popup_selection(&popup_state, &selection_id);
         return;
     }
 
-    remember_selected_text(monitor_state, selected_text);
+    if let Err(error) = show_selection_popup(app, &selection_id, &matched.plugin, mouse_x, mouse_y)
+    {
+        eprintln!("Failed to show selection popup: {error}");
+        remove_popup_selection(&popup_state, &selection_id);
+    }
 }
 
 fn left_mouse_position(event: &Event) -> Option<(f64, f64)> {
@@ -198,29 +316,21 @@ fn drag_exceeds_threshold(start_x: f64, start_y: f64, end_x: f64, end_y: f64) ->
     (dx * dx + dy * dy).sqrt() > MIN_DRAG_DISTANCE_PX
 }
 
-fn is_duplicate_selection(
-    monitor_state: &Arc<Mutex<SelectionMonitorState>>,
-    selected_text: &str,
-) -> bool {
-    match monitor_state.lock() {
-        Ok(state) => state.last_selected_text == selected_text,
-        Err(error) => {
-            eprintln!("Selection monitor state lock failed during duplicate check: {error}");
-            true
-        }
-    }
+fn should_process_selection_job(job_generation: u64, current_generation: u64) -> bool {
+    job_generation == current_generation
 }
 
-fn remember_selected_text(
+fn is_current_selection_job(
     monitor_state: &Arc<Mutex<SelectionMonitorState>>,
-    selected_text: String,
-) {
+    job_generation: u64,
+) -> bool {
     match monitor_state.lock() {
-        Ok(mut state) => state.last_selected_text = selected_text,
+        Ok(state) => should_process_selection_job(job_generation, state.generation),
         Err(error) => {
-            eprintln!("Selection monitor state lock failed while remembering text: {error}")
+            eprintln!("Selection monitor state lock failed during generation check: {error}");
+            false
         }
-    };
+    }
 }
 
 fn clear_popup_state(app: &AppHandle) {
@@ -264,5 +374,21 @@ mod tests {
     fn drag_distance_must_exceed_five_pixels() {
         assert!(!drag_exceeds_threshold(10.0, 10.0, 13.0, 14.0));
         assert!(drag_exceeds_threshold(10.0, 10.0, 16.0, 10.0));
+    }
+
+    #[test]
+    fn selection_job_must_match_current_generation() {
+        assert!(should_process_selection_job(7, 7));
+        assert!(!should_process_selection_job(6, 7));
+    }
+
+    #[test]
+    fn job_queue_keeps_only_latest_pending_selection() {
+        let queue = SelectionJobQueue::new();
+
+        queue.enqueue_latest(SelectionJob { generation: 1 });
+        queue.enqueue_latest(SelectionJob { generation: 2 });
+
+        assert_eq!(queue.wait_for_job().unwrap().generation, 2);
     }
 }
