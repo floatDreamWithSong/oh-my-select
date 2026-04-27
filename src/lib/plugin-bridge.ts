@@ -20,6 +20,12 @@ export type PluginBridgeResponse = {
   error?: string
 }
 
+export type PluginBridgeSession = {
+  entryUrl: string
+  loadCount: number
+  bridgeEnabled: boolean
+}
+
 const bridgeMethods = new Set<PluginBridgeRequest["method"]>([
   "closePopup",
   "openExternal",
@@ -92,5 +98,43 @@ export function getRequiredBridgeValueArg(
 export function assertPopupBridgeRequest(request: PluginBridgeRequest) {
   if (request.viewKind !== "popup") {
     throw new Error("closePopup is only available from popup views")
+  }
+}
+
+export function createPluginBridgeSession(
+  entryUrl: string
+): PluginBridgeSession {
+  return {
+    entryUrl,
+    loadCount: 0,
+    bridgeEnabled: false,
+  }
+}
+
+export function resetPluginBridgeSession(
+  session: PluginBridgeSession,
+  entryUrl: string
+) {
+  session.entryUrl = entryUrl
+  session.loadCount = 0
+  session.bridgeEnabled = false
+}
+
+export function recordPluginFrameLoad(session: PluginBridgeSession) {
+  session.loadCount += 1
+  session.bridgeEnabled =
+    session.loadCount === 1 && isOmsPluginUrl(session.entryUrl)
+
+  return {
+    bridgeEnabled: session.bridgeEnabled,
+    shouldResetFrame: !session.bridgeEnabled,
+  }
+}
+
+function isOmsPluginUrl(value: string) {
+  try {
+    return new URL(value).protocol === "oms-plugin:"
+  } catch {
+    return false
   }
 }

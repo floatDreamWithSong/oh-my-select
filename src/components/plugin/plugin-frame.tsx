@@ -9,10 +9,13 @@ import {
 } from "@/lib/tauri-api"
 import {
   assertPopupBridgeRequest,
+  createPluginBridgeSession,
   getRequiredBridgeValueArg,
   getRequiredStringBridgeArg,
   isPluginBridgeRequest,
   postBridgeResponse,
+  recordPluginFrameLoad,
+  resetPluginBridgeSession,
 } from "@/lib/plugin-bridge"
 
 type PluginFrameViewKind = PluginBridgeRequest["viewKind"]
@@ -33,6 +36,23 @@ export function PluginFrame({
   className,
 }: PluginFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const bridgeSessionRef = useRef(createPluginBridgeSession(entryUrl))
+
+  useEffect(() => {
+    resetPluginBridgeSession(bridgeSessionRef.current, entryUrl)
+  }, [entryUrl])
+
+  const handleLoad = () => {
+    const loadState = recordPluginFrameLoad(bridgeSessionRef.current)
+
+    if (
+      loadState.shouldResetFrame &&
+      iframeRef.current &&
+      iframeRef.current.getAttribute("src") !== "about:blank"
+    ) {
+      iframeRef.current.src = "about:blank"
+    }
+  }
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
@@ -43,6 +63,10 @@ export function PluginFrame({
       }
 
       if (!isPluginBridgeRequest(event.data)) {
+        return
+      }
+
+      if (!bridgeSessionRef.current.bridgeEnabled) {
         return
       }
 
@@ -82,6 +106,7 @@ export function PluginFrame({
       src={entryUrl}
       title={title}
       className={className}
+      onLoad={handleLoad}
     />
   )
 }
