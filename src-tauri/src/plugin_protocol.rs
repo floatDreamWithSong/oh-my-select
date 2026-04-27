@@ -38,6 +38,8 @@ pub enum PluginProtocolError {
     Io(#[from] std::io::Error),
     #[error("failed to build plugin protocol response: {0}")]
     Http(#[from] http::Error),
+    #[error("plugin entry is not an HTML document")]
+    NotHtml,
 }
 
 #[derive(Debug)]
@@ -162,6 +164,32 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     uri: &str,
 ) -> Result<http::Response<Vec<u8>>, PluginProtocolError> {
+    let resource = load_plugin_resource(app, uri)?;
+
+    response(StatusCode::OK, resource.content_type, resource.body)
+}
+
+pub fn plugin_view_html_for_entry_url<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    entry_url: &str,
+) -> Result<String, PluginProtocolError> {
+    let resource = load_plugin_resource(app, entry_url)?;
+    if resource.content_type.starts_with("text/html") {
+        String::from_utf8(resource.body).map_err(PluginProtocolError::Decode)
+    } else {
+        Err(PluginProtocolError::NotHtml)
+    }
+}
+
+struct PluginResource {
+    content_type: &'static str,
+    body: Vec<u8>,
+}
+
+fn load_plugin_resource<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    uri: &str,
+) -> Result<PluginResource, PluginProtocolError> {
     let request = parse_plugin_protocol_uri(uri)?;
     let (settings, popup) = {
         let state = app
@@ -210,7 +238,7 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
         fs::read(file_path)?
     };
 
-    response(StatusCode::OK, content_type, body)
+    Ok(PluginResource { content_type, body })
 }
 
 fn matching_popup_selection(

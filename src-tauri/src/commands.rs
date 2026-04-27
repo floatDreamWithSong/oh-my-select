@@ -3,6 +3,7 @@ use crate::models::{
     AppSettingsSnapshot, InstalledPlugin, LanguagePreference, PluginSettingsPayload, PopupPayload,
 };
 use crate::plugin_engine::build_view_context;
+use crate::plugin_protocol::plugin_view_html_for_entry_url;
 use crate::plugin_registry::PluginRegistry;
 use crate::popup_manager::close_selection_popup;
 use serde_json::Value;
@@ -149,6 +150,11 @@ pub fn get_plugin_settings_payload(
         entry_url,
         context,
     })
+}
+
+#[tauri::command]
+pub fn get_plugin_view_html(app: AppHandle, entry_url: String) -> Result<String, String> {
+    plugin_view_html_for_entry_url(&app, &entry_url).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
