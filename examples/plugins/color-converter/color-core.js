@@ -1,4 +1,5 @@
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+const DECIMAL_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)$/
 
 export function parseColor(value) {
   const sourceText = typeof value === "string" ? value.trim() : ""
@@ -102,7 +103,7 @@ function parseHsl(value) {
   if (
     !args ||
     args.channels.length !== 3 ||
-    !isFiniteNumber(args.channels[0]) ||
+    parseDecimal(args.channels[0]) === null ||
     !isPercent(args.channels[1]) ||
     !isPercent(args.channels[2]) ||
     !isOptionalAlpha(args.alpha)
@@ -110,7 +111,7 @@ function parseHsl(value) {
     return null
   }
 
-  const h = Number(args.channels[0])
+  const h = parseDecimal(args.channels[0])
   const s = parsePercent(args.channels[1])
   const l = parsePercent(args.channels[2])
   const rgb = hslToRgb(h, s, l)
@@ -144,9 +145,9 @@ function parseOklch(value) {
   }
 
   const rgb = oklchToRgb(
-    Number(args.channels[0]),
-    Number(args.channels[1]),
-    Number(args.channels[2])
+    parseDecimal(args.channels[0]),
+    parseDecimal(args.channels[1]),
+    parseDecimal(args.channels[2])
   )
 
   return normalizeColor({
@@ -205,7 +206,7 @@ function splitColorArgs(body) {
 }
 
 function parseByte(value) {
-  const numeric = Number(value)
+  const numeric = parseDecimal(value)
   if (!Number.isFinite(numeric) || numeric < 0 || numeric > 255) {
     return null
   }
@@ -218,15 +219,15 @@ function parsePercent(value) {
     return null
   }
 
-  return Number(value.slice(0, -1))
+  return parseDecimal(value.slice(0, -1))
 }
 
 function parseAlpha(value) {
   if (value.endsWith("%")) {
-    return Number(value.slice(0, -1)) / 100
+    return parseDecimal(value.slice(0, -1)) / 100
   }
 
-  return Number(value)
+  return parseDecimal(value)
 }
 
 function isOptionalAlpha(value) {
@@ -239,11 +240,11 @@ function isAlpha(value) {
   }
 
   if (value.endsWith("%")) {
-    const numeric = Number(value.slice(0, -1))
+    const numeric = parseDecimal(value.slice(0, -1))
     return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
   }
 
-  const numeric = Number(value)
+  const numeric = parseDecimal(value)
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1
 }
 
@@ -252,12 +253,20 @@ function isPercent(value) {
     return false
   }
 
-  const numeric = Number(value.slice(0, -1))
+  const numeric = parseDecimal(value.slice(0, -1))
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
 }
 
 function isFiniteNumber(value) {
-  return Number.isFinite(Number(value))
+  return Number.isFinite(parseDecimal(value))
+}
+
+function parseDecimal(value) {
+  if (typeof value !== "string" || !DECIMAL_RE.test(value)) {
+    return null
+  }
+
+  return Number(value)
 }
 
 function normalizeColor(color) {

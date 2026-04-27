@@ -5,6 +5,8 @@ export function match(context) {
   return isSupportedColor(selectedText)
 }
 
+const DECIMAL_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)$/
+
 function isSupportedColor(value) {
   return (
     isHexColor(value) ||
@@ -105,9 +107,14 @@ function splitColorArgs(body) {
   }
 
   const channels = slashParts[0].trim().split(/\s+/).filter(Boolean)
+  const alpha = slashParts.length === 2 ? slashParts[1].trim() : null
+  if (channels.length === 0 || alpha === "") {
+    return null
+  }
+
   return {
     channels,
-    alpha: slashParts.length === 2 ? slashParts[1].trim() : null,
+    alpha,
   }
 }
 
@@ -116,29 +123,41 @@ function isOptionalAlpha(value) {
 }
 
 function isAlpha(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    return false
+  }
+
   if (value.endsWith("%")) {
-    const numeric = Number(value.slice(0, -1))
+    const numeric = parseDecimal(value.slice(0, -1))
     return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
   }
 
-  const numeric = Number(value)
+  const numeric = parseDecimal(value)
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1
 }
 
 function isByte(value) {
-  const numeric = Number(value)
+  const numeric = parseDecimal(value)
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 255
 }
 
 function isPercent(value) {
-  if (!value.endsWith("%")) {
+  if (typeof value !== "string" || !value.endsWith("%")) {
     return false
   }
 
-  const numeric = Number(value.slice(0, -1))
+  const numeric = parseDecimal(value.slice(0, -1))
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
 }
 
 function isFiniteNumber(value) {
-  return Number.isFinite(Number(value))
+  return Number.isFinite(parseDecimal(value))
+}
+
+function parseDecimal(value) {
+  if (typeof value !== "string" || !DECIMAL_RE.test(value)) {
+    return NaN
+  }
+
+  return Number(value)
 }
