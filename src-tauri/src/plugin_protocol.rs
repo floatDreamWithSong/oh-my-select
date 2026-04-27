@@ -2,9 +2,11 @@ use crate::app_state::AppState;
 use crate::models::{InstalledPlugin, PluginViewContext};
 use crate::plugin_engine::build_view_context;
 use crate::plugin_registry::{PluginRegistry, PluginRegistryError};
+use crate::popup_manager::PopupSelection;
 use crate::settings_manager::SettingsError;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tauri::http::{self, header::CONTENT_TYPE, StatusCode};
 use tauri::Manager;
 use thiserror::Error;
@@ -162,19 +164,6 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
             .ok_or(PluginProtocolError::MissingState)?;
         (state.settings.clone(), state.popup.clone())
     };
-    let selected_text = if request.view_kind == "popup" {
-        request.selection_id.as_deref().and_then(|selection_id| {
-            popup
-                .lock()
-                .ok()
-                .and_then(|state| state.get(selection_id))
-                .filter(|selection| selection.plugin.id == request.plugin_id)
-                .and_then(|selection| selection.context.selected_text)
-        })
-    } else {
-        None
-    };
-
     let registry = PluginRegistry::new(settings.clone());
     let plugin = installed_plugin_for_request(&registry, &request.plugin_id)?;
     let plugin_dir = registry.plugin_dir(&request.plugin_id);
@@ -182,6 +171,16 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     let content_type = content_type_for_path(&request.content_path);
 
     let body = if content_type.starts_with("text/html") {
+        let popup_selection = if request.view_kind == "popup" {
+            request.selection_id.as_deref().and_then(|selection_id| {
+                matching_popup_selection(&popup, selection_id, &request.plugin_id)
+            })
+        } else {
+            None
+        };
+        let selected_text = popup_selection
+            .as_ref()
+            .and_then(|selection| selection.context.selected_text.clone());
         let config = settings.load_config()?;
         let locale = registry.resolve_locale(config.language_preference);
         let context = build_view_context(
@@ -191,17 +190,46 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
             config.language_preference,
             app.package_info().version.to_string(),
         );
-        inject_bridge(
+        let body = inject_bridge(
             &fs::read_to_string(file_path)?,
             &context,
             &request.view_kind,
         )?
-        .into_bytes()
+        .into_bytes();
+        if let Some(selection) = popup_selection {
+            remove_matching_popup_selection(&popup, &selection.selection_id, &request.plugin_id);
+        }
+        body
     } else {
         fs::read(file_path)?
     };
 
     response(StatusCode::OK, content_type, body)
+}
+
+fn matching_popup_selection(
+    popup: &Arc<Mutex<crate::popup_manager::PopupRuntimeState>>,
+    selection_id: &str,
+    plugin_id: &str,
+) -> Option<PopupSelection> {
+    let state = popup.lock().ok()?;
+    let selection = state.get(selection_id)?;
+    (selection.plugin.id == plugin_id).then_some(selection)
+}
+
+fn remove_matching_popup_selection(
+    popup: &Arc<Mutex<crate::popup_manager::PopupRuntimeState>>,
+    selection_id: &str,
+    plugin_id: &str,
+) {
+    if let Ok(mut state) = popup.lock() {
+        if state
+            .get(selection_id)
+            .is_some_and(|selection| selection.plugin.id == plugin_id)
+        {
+            state.remove(selection_id);
+        }
+    }
 }
 
 fn installed_plugin_for_request(
@@ -321,7 +349,11 @@ fn error_response(error: PluginProtocolError) -> http::Response<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AppConfig, LanguagePreference, PluginViewContext};
+    use crate::models::{
+        AppConfig, InstalledPlugin, LanguagePreference, LocalizedText, PluginManifest,
+        PluginPermissions, PluginViewContext, PopupManifest,
+    };
+    use crate::popup_manager::{PopupRuntimeState, PopupSelection};
     use crate::settings_manager::SettingsManager;
     use std::fs;
     use std::path::PathBuf;
@@ -335,6 +367,45 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn plugin(id: &str) -> InstalledPlugin {
+        InstalledPlugin {
+            id: id.to_string(),
+            manifest: PluginManifest {
+                id: id.to_string(),
+                name: LocalizedText {
+                    zh_cn: None,
+                    en: Some("Test Plugin".to_string()),
+                },
+                version: "0.1.0".to_string(),
+                matcher: "matcher.js".to_string(),
+                popup: PopupManifest {
+                    entry: "popup.html".to_string(),
+                    width: 320,
+                    height: 240,
+                },
+                settings: None,
+                permissions: PluginPermissions::default(),
+            },
+            enabled: true,
+            has_settings: false,
+        }
+    }
+
+    fn popup_selection(selection_id: &str, plugin: InstalledPlugin) -> PopupSelection {
+        PopupSelection {
+            selection_id: selection_id.to_string(),
+            plugin: plugin.clone(),
+            context: PluginViewContext {
+                selected_text: Some("selected".to_string()),
+                locale: "en".to_string(),
+                language_preference: LanguagePreference::En,
+                plugin_id: plugin.id,
+                plugin_version: "0.1.0".to_string(),
+                app_version: "0.1.0".to_string(),
+            },
+        }
     }
 
     #[test]
@@ -434,5 +505,41 @@ mod tests {
             error,
             PluginProtocolError::MissingPlugin(plugin_id) if plugin_id == "orphan"
         ));
+    }
+
+    #[test]
+    fn clones_then_removes_matching_popup_selection() {
+        let popup = Arc::new(Mutex::new(PopupRuntimeState::default()));
+        popup
+            .lock()
+            .unwrap()
+            .insert(popup_selection("1", plugin("quick-search")));
+
+        let selection = matching_popup_selection(&popup, "1", "quick-search").unwrap();
+
+        assert_eq!(
+            selection.context.selected_text,
+            Some("selected".to_string())
+        );
+        assert!(popup.lock().unwrap().get("1").is_some());
+
+        remove_matching_popup_selection(&popup, "1", "quick-search");
+
+        assert!(popup.lock().unwrap().get("1").is_none());
+    }
+
+    #[test]
+    fn does_not_remove_mismatched_popup_selection() {
+        let popup = Arc::new(Mutex::new(PopupRuntimeState::default()));
+        popup
+            .lock()
+            .unwrap()
+            .insert(popup_selection("1", plugin("quick-search")));
+
+        let selection = matching_popup_selection(&popup, "1", "other-plugin");
+        remove_matching_popup_selection(&popup, "1", "other-plugin");
+
+        assert!(selection.is_none());
+        assert!(popup.lock().unwrap().get("1").is_some());
     }
 }
