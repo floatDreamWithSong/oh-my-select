@@ -1,6 +1,8 @@
+pub mod app_state;
 pub mod models;
 pub mod plugin_engine;
 pub mod plugin_registry;
+pub mod popup_manager;
 pub mod settings_manager;
 
 use tauri_plugin_opener::OpenerExt;
