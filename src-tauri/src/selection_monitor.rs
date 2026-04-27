@@ -25,6 +25,8 @@ struct SelectionMonitorState {
 #[derive(Debug, Clone, Copy)]
 struct SelectionJob {
     generation: u64,
+    release_x: f64,
+    release_y: f64,
 }
 
 #[derive(Clone)]
@@ -140,6 +142,8 @@ fn handle_mouse_pressed(
     };
 
     match selection_popup_hit_test(app, x, y) {
+        // If geometry cannot be read, preserve popup interactivity rather than
+        // closing a possibly inside click.
         SelectionPopupHitTest::Inside | SelectionPopupHitTest::Unknown => return,
         SelectionPopupHitTest::NoPopup | SelectionPopupHitTest::Outside => {}
     }
@@ -186,6 +190,8 @@ fn handle_mouse_released(
         if drag_exceeds_threshold(state.drag_start_x, state.drag_start_y, x, y) {
             Some(SelectionJob {
                 generation: state.generation,
+                release_x: x,
+                release_y: y,
             })
         } else {
             None
@@ -217,20 +223,19 @@ fn process_selection_job(
         return;
     }
 
-    handle_selection(app, monitor_state, job.generation);
+    handle_selection(app, monitor_state, job);
 }
 
 fn handle_selection(
     app: &AppHandle,
     monitor_state: &Arc<Mutex<SelectionMonitorState>>,
-    generation: u64,
+    job: SelectionJob,
 ) {
     let selected_text = selection::get_text().trim().to_string();
-    if selected_text.is_empty() || !is_current_selection_job(monitor_state, generation) {
+    if selected_text.is_empty() || !is_current_selection_job(monitor_state, job.generation) {
         return;
     }
 
-    let (mouse_x, mouse_y) = monio::mouse_position().unwrap_or((0.0, 0.0));
     let app_state = match app.try_state::<AppState>() {
         Some(state) => state,
         None => {
@@ -258,7 +263,9 @@ fn handle_selection(
         }
     };
     let engine = PluginEngine::new(settings.plugins_dir());
-    let matched = match engine.match_first(&plugins, &selected_text, &locale) {
+    let matched = match engine.match_first_interruptible(&plugins, &selected_text, &locale, || {
+        is_current_selection_job(monitor_state, job.generation)
+    }) {
         Ok(Some(matched)) => matched,
         Ok(None) => return,
         Err(error) => {
@@ -266,7 +273,7 @@ fn handle_selection(
             return;
         }
     };
-    if !is_current_selection_job(monitor_state, generation) {
+    if !is_current_selection_job(monitor_state, job.generation) {
         return;
     }
 
@@ -289,13 +296,18 @@ fn handle_selection(
         return;
     }
 
-    if !is_current_selection_job(monitor_state, generation) {
+    if !is_current_selection_job(monitor_state, job.generation) {
         remove_popup_selection(&popup_state, &selection_id);
         return;
     }
 
-    if let Err(error) = show_selection_popup(app, &selection_id, &matched.plugin, mouse_x, mouse_y)
-    {
+    if let Err(error) = show_selection_popup(
+        app,
+        &selection_id,
+        &matched.plugin,
+        job.release_x,
+        job.release_y,
+    ) {
         eprintln!("Failed to show selection popup: {error}");
         remove_popup_selection(&popup_state, &selection_id);
     }
@@ -386,9 +398,19 @@ mod tests {
     fn job_queue_keeps_only_latest_pending_selection() {
         let queue = SelectionJobQueue::new();
 
-        queue.enqueue_latest(SelectionJob { generation: 1 });
-        queue.enqueue_latest(SelectionJob { generation: 2 });
+        queue.enqueue_latest(SelectionJob {
+            generation: 1,
+            release_x: 10.0,
+            release_y: 20.0,
+        });
+        queue.enqueue_latest(SelectionJob {
+            generation: 2,
+            release_x: 30.0,
+            release_y: 40.0,
+        });
 
-        assert_eq!(queue.wait_for_job().unwrap().generation, 2);
+        let job = queue.wait_for_job().unwrap();
+        assert_eq!(job.generation, 2);
+        assert_eq!((job.release_x, job.release_y), (30.0, 40.0));
     }
 }

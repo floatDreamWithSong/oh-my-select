@@ -41,19 +41,42 @@ impl PluginEngine {
         selected_text: &str,
         locale: &str,
     ) -> Result<Option<MatchedPlugin>, PluginEngineError> {
+        self.match_first_interruptible(plugins, selected_text, locale, || true)
+    }
+
+    pub fn match_first_interruptible<F>(
+        &self,
+        plugins: &[InstalledPlugin],
+        selected_text: &str,
+        locale: &str,
+        mut should_continue: F,
+    ) -> Result<Option<MatchedPlugin>, PluginEngineError>
+    where
+        F: FnMut() -> bool,
+    {
         for plugin in plugins.iter().filter(|plugin| plugin.enabled) {
-            match self.match_plugin(plugin, selected_text, locale) {
-                Ok(true) => {
-                    return Ok(Some(MatchedPlugin {
-                        plugin: plugin.clone(),
-                        selected_text: selected_text.to_string(),
-                        locale: locale.to_string(),
-                    }));
-                }
-                Ok(false) => {}
+            if !should_continue() {
+                return Ok(None);
+            }
+
+            let matched = match self.match_plugin(plugin, selected_text, locale) {
+                Ok(matched) => matched,
                 Err(error) => {
                     eprintln!("Plugin matcher failed for {}: {error}", plugin.id);
+                    false
                 }
+            };
+
+            if !should_continue() {
+                return Ok(None);
+            }
+
+            if matched {
+                return Ok(Some(MatchedPlugin {
+                    plugin: plugin.clone(),
+                    selected_text: selected_text.to_string(),
+                    locale: locale.to_string(),
+                }));
             }
         }
 
@@ -453,5 +476,36 @@ mod tests {
         let matched = engine.match_first(&plugins, "hello", "en").unwrap();
 
         assert!(matched.is_none());
+    }
+
+    #[test]
+    fn interruptible_matcher_stops_before_later_enabled_plugins_after_cancel() {
+        let root = temp_dir("interrupt");
+        let plugins = vec![
+            plugin(
+                &root,
+                "first",
+                "export function match() { return false }",
+                true,
+            ),
+            plugin(
+                &root,
+                "should-not-run",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+        let mut checks = 0;
+
+        let matched = engine
+            .match_first_interruptible(&plugins, "hello", "en", || {
+                checks += 1;
+                checks < 2
+            })
+            .unwrap();
+
+        assert!(matched.is_none());
+        assert_eq!(checks, 2);
     }
 }
