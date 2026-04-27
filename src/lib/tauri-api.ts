@@ -99,6 +99,10 @@ export function getPluginSettingsPayload(pluginId: string) {
   })
 }
 
+export function getPluginViewHtml(entryUrl: string) {
+  return invoke<string>("get_plugin_view_html", { entryUrl })
+}
+
 export function bridgeOpenExternal(pluginId: string, url: string) {
   return invoke<void>("bridge_open_external", { pluginId, url })
 }

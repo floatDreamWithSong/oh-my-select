@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { PluginBridgeRequest } from "@/lib/plugin-bridge"
 import {
   bridgeClosePopup,
   bridgeOpenExternal,
+  getPluginViewHtml,
   pluginStorageGet,
   pluginStorageRemove,
   pluginStorageSet,
@@ -26,6 +27,8 @@ type PluginFrameProps = {
   className?: string
 }
 
+export const PLUGIN_IFRAME_SANDBOX = "allow-scripts allow-forms"
+
 export function PluginFrame({
   pluginId,
   viewKind,
@@ -39,6 +42,29 @@ export function PluginFrame({
     () => appendPluginBridgeSession(entryUrl, bridgeSession),
     [bridgeSession, entryUrl]
   )
+  const [iframeHtml, setIframeHtml] = useState("")
+
+  useEffect(() => {
+    let ignore = false
+
+    setIframeHtml("")
+    getPluginViewHtml(iframeSrc)
+      .then((html) => {
+        if (!ignore) {
+          setIframeHtml(html)
+        }
+      })
+      .catch((error: unknown) => {
+        if (!ignore) {
+          const message = error instanceof Error ? error.message : String(error)
+          setIframeHtml(`<pre>${escapeHtml(message)}</pre>`)
+        }
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [iframeSrc])
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
@@ -89,8 +115,8 @@ export function PluginFrame({
     <iframe
       ref={iframeRef}
       key={bridgeSession}
-      sandbox="allow-scripts allow-forms"
-      src={iframeSrc}
+      sandbox={PLUGIN_IFRAME_SANDBOX}
+      srcDoc={iframeHtml}
       title={title}
       className={className}
     />
@@ -103,6 +129,20 @@ function createBridgeSessionToken() {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function escapeHtml(value: string) {
+  return value.replaceAll(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[char] ?? char
+  )
 }
 
 function dispatchBridgeRequest(request: PluginBridgeRequest) {
