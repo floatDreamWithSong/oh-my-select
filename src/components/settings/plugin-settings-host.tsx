@@ -1,5 +1,5 @@
-import { t } from "@/lib/i18n"
 import type { AppSettingsSnapshot } from "@/lib/tauri-api"
+import { t } from "@/lib/i18n"
 
 export function PluginSettingsHost({
   snapshot,

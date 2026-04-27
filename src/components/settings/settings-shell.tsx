@@ -1,12 +1,12 @@
 import { Component } from "react"
 import { Settings, SlidersHorizontal } from "lucide-react"
+import { PluginSettingsHost } from "./plugin-settings-host"
+import { SystemSettings } from "./system-settings"
+import type { ReactNode } from "react"
+import type { AppSettingsSnapshot } from "@/lib/tauri-api"
 import { Button } from "@/components/ui/button"
 import { localizedName, t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { PluginSettingsHost } from "./plugin-settings-host"
-import { SystemSettings } from "./system-settings"
-import type { AppSettingsSnapshot } from "@/lib/tauri-api"
-import type { ReactNode } from "react"
 
 type SettingsRoute = { type: "system" } | { type: "plugin"; pluginId: string }
 
@@ -53,18 +53,18 @@ export class SettingsShell extends Component<
     return (
       <div
         data-ui-scroll-container
-        className="grid min-h-svh grid-cols-[240px_minmax(0,1fr)] bg-background text-foreground"
+        className="flex min-h-svh flex-col bg-background text-foreground sm:grid sm:grid-cols-[240px_minmax(0,1fr)]"
       >
-        <aside className="flex min-h-0 flex-col border-r border-sidebar-border bg-sidebar">
+        <aside className="flex min-h-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar sm:border-r sm:border-b-0">
           <div className="border-b border-sidebar-border px-4 py-3">
             <div className="truncate text-sm font-semibold">oh-my-select</div>
             <div className="mt-1 truncate text-xs text-muted-foreground">
-              Version {snapshot.appVersion}
+              {t(snapshot.locale, "version")} {snapshot.appVersion}
             </div>
           </div>
 
-          <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
-            <div className="space-y-1">
+          <nav className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden p-3 sm:flex-col sm:gap-4 sm:overflow-x-hidden sm:overflow-y-auto">
+            <div className="min-w-44 space-y-1 sm:min-w-0">
               <div className="px-2 text-[11px] font-medium text-muted-foreground uppercase">
                 {t(snapshot.locale, "appGroup")}
               </div>
@@ -78,7 +78,7 @@ export class SettingsShell extends Component<
               />
             </div>
 
-            <div className="min-h-0 space-y-1">
+            <div className="min-h-0 min-w-44 space-y-1 sm:min-w-0">
               <div className="px-2 text-[11px] font-medium text-muted-foreground uppercase">
                 {t(snapshot.locale, "pluginGroup")}
               </div>
