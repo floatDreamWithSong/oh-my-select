@@ -111,4 +111,13 @@ pub struct PluginSettingsPayload {
     pub context: PluginViewContext,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PopupPayload {
+    pub selection_id: String,
+    pub plugin: InstalledPlugin,
+    pub context: PluginViewContext,
+    pub entry_url: String,
+}
+
 pub type PluginStorageMap = BTreeMap<String, serde_json::Value>;

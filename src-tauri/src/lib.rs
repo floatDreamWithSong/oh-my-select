@@ -1,4 +1,5 @@
 pub mod app_state;
+pub mod commands;
 pub mod models;
 pub mod plugin_engine;
 pub mod plugin_protocol;
@@ -54,7 +55,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(external_navigation_plugin())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::get_settings_snapshot,
+            commands::set_language_preference,
+            commands::import_plugin_folder,
+            commands::set_plugin_enabled,
+            commands::set_plugin_order,
+            commands::remove_plugin,
+            commands::get_popup_payload,
+            commands::get_plugin_settings_payload,
+            commands::plugin_storage_get,
+            commands::plugin_storage_set,
+            commands::plugin_storage_remove,
+            commands::bridge_open_external,
+            commands::bridge_close_popup
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
