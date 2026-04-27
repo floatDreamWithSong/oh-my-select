@@ -11,12 +11,13 @@
     "removeUnusedCommands": true
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
+        "label": "main",
         "title": "oh-my-select",
-        "width": 1400,
-        "height": 918,
+        "width": 1120,
+        "height": 760,
         "center": true,
         "visible": false
       }
