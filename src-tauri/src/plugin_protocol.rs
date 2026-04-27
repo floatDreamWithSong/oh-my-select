@@ -1,5 +1,5 @@
 use crate::app_state::AppState;
-use crate::models::PluginViewContext;
+use crate::models::{InstalledPlugin, PluginViewContext};
 use crate::plugin_engine::build_view_context;
 use crate::plugin_registry::{PluginRegistry, PluginRegistryError};
 use crate::settings_manager::SettingsError;
@@ -54,7 +54,7 @@ pub fn register_plugin_protocol<R: tauri::Runtime>(
         let app = ctx.app_handle().clone();
         let uri = request.uri().to_string();
 
-        std::thread::spawn(move || {
+        tauri::async_runtime::spawn_blocking(move || {
             let response =
                 handle_plugin_protocol_request(&app, &uri).unwrap_or_else(error_response);
             responder.respond(response);
@@ -176,17 +176,13 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     };
 
     let registry = PluginRegistry::new(settings.clone());
+    let plugin = installed_plugin_for_request(&registry, &request.plugin_id)?;
     let plugin_dir = registry.plugin_dir(&request.plugin_id);
     let file_path = resolve_plugin_file_path(&plugin_dir, &request.file_path)?;
     let content_type = content_type_for_path(&request.content_path);
 
     let body = if content_type.starts_with("text/html") {
         let config = settings.load_config()?;
-        let plugins = registry.list_plugins()?;
-        let plugin = plugins
-            .into_iter()
-            .find(|plugin| plugin.id == request.plugin_id)
-            .ok_or_else(|| PluginProtocolError::MissingPlugin(request.plugin_id.clone()))?;
         let locale = registry.resolve_locale(config.language_preference);
         let context = build_view_context(
             &plugin,
@@ -208,6 +204,17 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     response(StatusCode::OK, content_type, body)
 }
 
+fn installed_plugin_for_request(
+    registry: &PluginRegistry,
+    plugin_id: &str,
+) -> Result<InstalledPlugin, PluginProtocolError> {
+    registry
+        .list_plugins()?
+        .into_iter()
+        .find(|plugin| plugin.id == plugin_id)
+        .ok_or_else(|| PluginProtocolError::MissingPlugin(plugin_id.to_string()))
+}
+
 fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginProtocolError> {
     let url = Url::parse(uri)?;
     let plugin_id = url
@@ -218,7 +225,7 @@ fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginP
     if !is_valid_plugin_id(&plugin_id) {
         return Err(PluginProtocolError::InvalidPluginId);
     }
-    let raw_path = url.path().trim_start_matches('/');
+    let raw_path = raw_plugin_path_from_uri(uri).ok_or(PluginProtocolError::InvalidPath)?;
     let decoded_path = urlencoding::decode(raw_path)?.into_owned();
     let file_path =
         sanitize_plugin_file_path(&decoded_path).ok_or(PluginProtocolError::InvalidPath)?;
@@ -239,6 +246,13 @@ fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginP
         view_kind,
         selection_id,
     })
+}
+
+fn raw_plugin_path_from_uri(uri: &str) -> Option<&str> {
+    let rest = uri.split_once("://")?.1;
+    let raw_path = rest.split_once('/')?.1;
+    let query_start = raw_path.find(['?', '#']).unwrap_or(raw_path.len());
+    Some(&raw_path[..query_start])
 }
 
 fn sanitize_plugin_file_path(path: &str) -> Option<PathBuf> {
@@ -307,7 +321,21 @@ fn error_response(error: PluginProtocolError) -> http::Response<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{LanguagePreference, PluginViewContext};
+    use crate::models::{AppConfig, LanguagePreference, PluginViewContext};
+    use crate::settings_manager::SettingsManager;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "oh-my-select-protocol-test-{}-{}",
+            name,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
 
     #[test]
     fn injects_bridge_before_head_close() {
@@ -326,6 +354,25 @@ mod tests {
         assert!(injected.contains("window.ohMySelect"));
         assert!(injected.contains("\"selectedText\":\"hello\""));
         assert!(injected.find("window.ohMySelect").unwrap() < injected.find("</head>").unwrap());
+    }
+
+    #[test]
+    fn prepends_bridge_when_head_close_is_missing() {
+        let html = "<main>Body</main>";
+        let context = PluginViewContext {
+            selected_text: None,
+            locale: "en".to_string(),
+            language_preference: LanguagePreference::En,
+            plugin_id: "quick-search".to_string(),
+            plugin_version: "0.1.0".to_string(),
+            app_version: "0.1.0".to_string(),
+        };
+
+        let injected = inject_bridge(html, &context, "settings").unwrap();
+
+        assert!(injected.starts_with("<script>"));
+        assert!(injected.contains("window.ohMySelect"));
+        assert!(injected.ends_with(html));
     }
 
     #[test]
@@ -356,5 +403,36 @@ mod tests {
     fn rejects_invalid_plugin_id_hosts() {
         assert!(parse_plugin_protocol_uri("oms-plugin://../popup.html").is_err());
         assert!(parse_plugin_protocol_uri("oms-plugin://quick.search/popup.html").is_err());
+    }
+
+    #[test]
+    fn rejects_encoded_traversal_paths() {
+        assert!(parse_plugin_protocol_uri("oms-plugin://quick-search/%2e%2e/secret.txt").is_err());
+    }
+
+    #[test]
+    fn rejects_plugin_directory_that_is_not_installed() {
+        let app_root = temp_dir("uninstalled-plugin");
+        let settings = SettingsManager::new(app_root.clone());
+        settings
+            .save_config(&AppConfig {
+                language_preference: LanguagePreference::En,
+                plugins: vec![],
+            })
+            .unwrap();
+        fs::create_dir_all(app_root.join("plugins").join("orphan")).unwrap();
+        fs::write(
+            app_root.join("plugins").join("orphan").join("style.css"),
+            "body{}",
+        )
+        .unwrap();
+        let registry = PluginRegistry::new(settings);
+
+        let error = installed_plugin_for_request(&registry, "orphan").unwrap_err();
+
+        assert!(matches!(
+            error,
+            PluginProtocolError::MissingPlugin(plugin_id) if plugin_id == "orphan"
+        ));
     }
 }
