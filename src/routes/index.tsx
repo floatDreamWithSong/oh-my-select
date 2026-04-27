@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
+import type { AppSettingsSnapshot } from "@/lib/tauri-api"
 import { SettingsShell } from "@/components/settings/settings-shell"
 import { getSettingsSnapshot } from "@/lib/tauri-api"
-import type { AppSettingsSnapshot } from "@/lib/tauri-api"
 
 export const Route = createFileRoute("/")({ component: App })
 

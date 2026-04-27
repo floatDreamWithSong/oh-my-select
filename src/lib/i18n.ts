@@ -16,6 +16,7 @@ const dictionaries = {
     moveUp: "上移",
     moveDown: "下移",
     remove: "移除",
+    version: "版本",
     pluginSettingsEmpty: "该插件暂未提供设置页面。",
   },
   en: {
@@ -33,6 +34,7 @@ const dictionaries = {
     moveUp: "Move Up",
     moveDown: "Move Down",
     remove: "Remove",
+    version: "Version",
     pluginSettingsEmpty: "This plugin does not have settings yet.",
   },
 } satisfies Record<Locale, Record<string, string>>
