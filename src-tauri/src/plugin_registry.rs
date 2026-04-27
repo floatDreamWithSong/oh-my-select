@@ -62,18 +62,36 @@ impl PluginRegistry {
         let manifest = self.read_manifest(source)?;
         self.validate_manifest(source, &manifest)?;
 
-        if self.plugin_dir(&manifest.id).exists() {
+        let final_dir = self.plugin_dir(&manifest.id);
+        let temp_dir = self
+            .settings
+            .plugins_dir()
+            .join(format!(".importing-{}", manifest.id));
+
+        remove_path_if_exists(&temp_dir)?;
+        if final_dir.exists() {
             return Err(PluginRegistryError::DuplicateId(manifest.id));
         }
 
-        copy_dir_all(source, &self.plugin_dir(&manifest.id))?;
+        if let Err(error) = copy_dir_all(source, &temp_dir) {
+            let _ = remove_path_if_exists(&temp_dir);
+            return Err(error.into());
+        }
+
+        if let Err(error) = fs::rename(&temp_dir, &final_dir) {
+            let _ = remove_path_if_exists(&temp_dir);
+            return Err(error.into());
+        }
 
         let mut config = self.settings.load_config()?;
         config.plugins.push(PluginConfigEntry {
             id: manifest.id.clone(),
             enabled: true,
         });
-        self.settings.save_config(&config)?;
+        if let Err(error) = self.settings.save_config(&config) {
+            let _ = remove_path_if_exists(&final_dir);
+            return Err(error.into());
+        }
 
         self.installed_plugin_from_manifest(manifest, true)
     }
@@ -111,7 +129,8 @@ impl PluginRegistry {
             .map(|entry| entry.id.clone())
             .collect();
         let incoming: HashSet<String> = ids.iter().cloned().collect();
-        if existing != incoming {
+        if ids.len() != config.plugins.len() || incoming.len() != ids.len() || existing != incoming
+        {
             return Err(PluginRegistryError::MissingPlugin(
                 "order mismatch".to_string(),
             ));
@@ -140,11 +159,12 @@ impl PluginRegistry {
             return Err(PluginRegistryError::MissingPlugin(id.to_string()));
         }
 
+        self.settings.save_config(&config)?;
+
         let dir = self.plugin_dir(id);
         if dir.exists() {
             fs::remove_dir_all(dir)?;
         }
-        self.settings.save_config(&config)?;
         Ok(())
     }
 
@@ -173,15 +193,11 @@ impl PluginRegistry {
         }
 
         for path in ["manifest.json", &manifest.matcher, &manifest.popup.entry] {
-            if !plugin_dir.join(path).exists() {
-                return Err(PluginRegistryError::MissingFile(path.to_string()));
-            }
+            ensure_required_file(plugin_dir, path)?;
         }
 
         if let Some(settings) = &manifest.settings {
-            if !plugin_dir.join(&settings.entry).exists() {
-                return Err(PluginRegistryError::MissingFile(settings.entry.clone()));
-            }
+            ensure_required_file(plugin_dir, &settings.entry)?;
         }
 
         Ok(())
@@ -195,7 +211,7 @@ impl PluginRegistry {
         let has_settings = manifest
             .settings
             .as_ref()
-            .map(|settings| self.plugin_dir(&manifest.id).join(&settings.entry).exists())
+            .map(|settings| is_regular_file(&self.plugin_dir(&manifest.id).join(&settings.entry)))
             .unwrap_or(false);
         Ok(InstalledPlugin {
             id: manifest.id.clone(),
@@ -220,7 +236,8 @@ fn validate_id(id: &str) -> Result<(), PluginRegistryError> {
 
 fn validate_relative_path(path: &str) -> Result<(), PluginRegistryError> {
     let path_buf = PathBuf::from(path);
-    let valid = !path_buf.is_absolute()
+    let valid = !path.is_empty()
+        && !path_buf.is_absolute()
         && path_buf
             .components()
             .all(|component| matches!(component, Component::Normal(_)));
@@ -228,6 +245,34 @@ fn validate_relative_path(path: &str) -> Result<(), PluginRegistryError> {
         Ok(())
     } else {
         Err(PluginRegistryError::InvalidRelativePath(path.to_string()))
+    }
+}
+
+fn ensure_required_file(plugin_dir: &Path, path: &str) -> Result<(), PluginRegistryError> {
+    if is_regular_file(&plugin_dir.join(path)) {
+        Ok(())
+    } else {
+        Err(PluginRegistryError::MissingFile(path.to_string()))
+    }
+}
+
+fn is_regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_file())
+        .unwrap_or(false)
+}
+
+fn remove_path_if_exists(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_dir() {
+                fs::remove_dir_all(path)
+            } else {
+                fs::remove_file(path)
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -339,6 +384,33 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_import_cleans_stale_temp_without_removing_installed_plugin() {
+        let source_root = temp_dir("dup-temp-source");
+        let app_root = temp_dir("dup-temp-app");
+        let first = write_plugin(&source_root, "quick-search", false);
+        let second = write_plugin(&source_root, "quick-search-copy", false);
+        fs::write(
+            second.join("manifest.json"),
+            fs::read_to_string(first.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let registry = PluginRegistry::new(SettingsManager::new(app_root.clone()));
+        registry.import_folder(&first).unwrap();
+        let temp_dir = app_root.join("plugins").join(".importing-quick-search");
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::write(temp_dir.join("stale.txt"), "stale").unwrap();
+
+        let error = registry.import_folder(&second).unwrap_err();
+
+        assert!(matches!(error, PluginRegistryError::DuplicateId(id) if id == "quick-search"));
+        assert!(!temp_dir.exists());
+        assert!(registry
+            .plugin_dir("quick-search")
+            .join("popup.html")
+            .exists());
+    }
+
+    #[test]
     fn rejects_manifest_with_invalid_popup_size() {
         let source_root = temp_dir("bad-size-source");
         let app_root = temp_dir("bad-size-app");
@@ -375,5 +447,134 @@ mod tests {
         assert_eq!(plugins[1].id, "first");
         assert!(!plugins[1].enabled);
         assert_eq!(registry.resolve_locale(LanguagePreference::En), "en");
+    }
+
+    #[test]
+    fn rejects_duplicate_plugin_order_ids() {
+        let source_root = temp_dir("duplicate-order-source");
+        let app_root = temp_dir("duplicate-order-app");
+        let first = write_plugin(&source_root, "first", false);
+        let second = write_plugin(&source_root, "second", false);
+        let registry = PluginRegistry::new(SettingsManager::new(app_root));
+
+        registry.import_folder(&first).unwrap();
+        registry.import_folder(&second).unwrap();
+
+        let error = registry
+            .set_plugin_order(vec!["first".to_string(), "first".to_string()])
+            .unwrap_err();
+        let plugins = registry.list_plugins().unwrap();
+
+        assert!(matches!(
+            error,
+            PluginRegistryError::MissingPlugin(message) if message == "order mismatch"
+        ));
+        assert_eq!(plugins[0].id, "first");
+        assert_eq!(plugins[1].id, "second");
+    }
+
+    #[test]
+    fn rejects_empty_matcher_path() {
+        let source_root = temp_dir("empty-matcher-source");
+        let app_root = temp_dir("empty-matcher-app");
+        let source = write_plugin(&source_root, "empty-matcher", false);
+        let manifest = fs::read_to_string(source.join("manifest.json"))
+            .unwrap()
+            .replace("\"matcher\": \"matcher.js\"", "\"matcher\": \"\"");
+        fs::write(source.join("manifest.json"), manifest).unwrap();
+        let registry = PluginRegistry::new(SettingsManager::new(app_root));
+
+        let error = registry.import_folder(&source).unwrap_err();
+
+        assert!(matches!(error, PluginRegistryError::InvalidRelativePath(path) if path.is_empty()));
+    }
+
+    #[test]
+    fn rejects_directory_popup_entry() {
+        let source_root = temp_dir("directory-popup-source");
+        let app_root = temp_dir("directory-popup-app");
+        let source = write_plugin(&source_root, "directory-popup", false);
+        fs::remove_file(source.join("popup.html")).unwrap();
+        fs::create_dir(source.join("popup.html")).unwrap();
+        let registry = PluginRegistry::new(SettingsManager::new(app_root));
+
+        let error = registry.import_folder(&source).unwrap_err();
+
+        assert!(matches!(
+            error,
+            PluginRegistryError::MissingFile(path) if path == "popup.html"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_popup_entry() {
+        use std::os::unix::fs::symlink;
+
+        let source_root = temp_dir("symlink-popup-source");
+        let app_root = temp_dir("symlink-popup-app");
+        let source = write_plugin(&source_root, "symlink-popup", false);
+        fs::remove_file(source.join("popup.html")).unwrap();
+        symlink(source.join("matcher.js"), source.join("popup.html")).unwrap();
+        let registry = PluginRegistry::new(SettingsManager::new(app_root));
+
+        let error = registry.import_folder(&source).unwrap_err();
+
+        assert!(matches!(
+            error,
+            PluginRegistryError::MissingFile(path) if path == "popup.html"
+        ));
+    }
+
+    #[test]
+    fn cleans_imported_directory_if_config_save_fails() {
+        let source_root = temp_dir("save-failure-source");
+        let app_root = temp_dir("save-failure-app");
+        let source = write_plugin(&source_root, "save-failure", false);
+        let registry = PluginRegistry::new(SettingsManager::new(app_root.clone()));
+        fs::create_dir_all(app_root.join("config.tmp")).unwrap();
+
+        let error = registry.import_folder(&source).unwrap_err();
+
+        assert!(matches!(error, PluginRegistryError::Settings(_)));
+        assert!(!registry.plugin_dir("save-failure").exists());
+        assert!(!app_root
+            .join("plugins")
+            .join(".importing-save-failure")
+            .exists());
+    }
+
+    #[test]
+    fn cleans_stale_import_temp_directory_before_import() {
+        let source_root = temp_dir("stale-temp-source");
+        let app_root = temp_dir("stale-temp-app");
+        let source = write_plugin(&source_root, "stale-temp", false);
+        let registry = PluginRegistry::new(SettingsManager::new(app_root.clone()));
+        let temp_dir = app_root.join("plugins").join(".importing-stale-temp");
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::write(temp_dir.join("stale.txt"), "stale").unwrap();
+
+        registry.import_folder(&source).unwrap();
+
+        assert!(registry
+            .plugin_dir("stale-temp")
+            .join("popup.html")
+            .exists());
+        assert!(!temp_dir.exists());
+    }
+
+    #[test]
+    fn keeps_plugin_directory_if_remove_config_save_fails() {
+        let source_root = temp_dir("remove-save-failure-source");
+        let app_root = temp_dir("remove-save-failure-app");
+        let source = write_plugin(&source_root, "remove-save-failure", false);
+        let registry = PluginRegistry::new(SettingsManager::new(app_root.clone()));
+        registry.import_folder(&source).unwrap();
+        fs::create_dir_all(app_root.join("config.tmp")).unwrap();
+
+        let error = registry.remove_plugin("remove-save-failure").unwrap_err();
+
+        assert!(matches!(error, PluginRegistryError::Settings(_)));
+        assert!(registry.plugin_dir("remove-save-failure").exists());
     }
 }
