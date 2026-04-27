@@ -121,7 +121,7 @@ fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, rquickjs::
               throw new Error("matcher must export function match(context)");
             }}
             const __context = JSON.parse({context_json:?});
-            Boolean(match(__context));
+            match(__context) === true;
             "#
         );
         ctx.eval::<bool, _>(script)
@@ -339,6 +339,87 @@ mod tests {
                 &root,
                 "loop",
                 "export function match() { while (true) {} }",
+                true,
+            ),
+            plugin(
+                &root,
+                "working",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "en")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "working");
+    }
+
+    #[test]
+    fn ignores_truthy_string_matcher_result() {
+        let root = temp_dir("truthy-string");
+        let plugins = vec![
+            plugin(
+                &root,
+                "string",
+                "export function match() { return 'true' }",
+                true,
+            ),
+            plugin(
+                &root,
+                "working",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "en")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "working");
+    }
+
+    #[test]
+    fn ignores_truthy_object_matcher_result() {
+        let root = temp_dir("truthy-object");
+        let plugins = vec![
+            plugin(
+                &root,
+                "object",
+                "export function match() { return {} }",
+                true,
+            ),
+            plugin(
+                &root,
+                "working",
+                "export function match() { return true }",
+                true,
+            ),
+        ];
+        let engine = PluginEngine::new(root);
+
+        let matched = engine
+            .match_first(&plugins, "hello", "en")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched.plugin.id, "working");
+    }
+
+    #[test]
+    fn ignores_promise_matcher_result() {
+        let root = temp_dir("promise");
+        let plugins = vec![
+            plugin(
+                &root,
+                "promise",
+                "export function match() { return Promise.resolve(true) }",
                 true,
             ),
             plugin(
