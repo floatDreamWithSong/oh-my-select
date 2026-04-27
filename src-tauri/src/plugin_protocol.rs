@@ -230,9 +230,6 @@ fn load_plugin_resource<R: tauri::Runtime>(
             request.bridge_session.as_deref(),
         )?
         .into_bytes();
-        if let Some(selection) = popup_selection {
-            remove_matching_popup_selection(&popup, &selection.selection_id, &request.plugin_id);
-        }
         body
     } else {
         fs::read(file_path)?
@@ -249,21 +246,6 @@ fn matching_popup_selection(
     let state = popup.lock().ok()?;
     let selection = state.get(selection_id)?;
     (selection.plugin.id == plugin_id).then_some(selection)
-}
-
-fn remove_matching_popup_selection(
-    popup: &Arc<Mutex<crate::popup_manager::PopupRuntimeState>>,
-    selection_id: &str,
-    plugin_id: &str,
-) {
-    if let Ok(mut state) = popup.lock() {
-        if state
-            .get(selection_id)
-            .is_some_and(|selection| selection.plugin.id == plugin_id)
-        {
-            state.remove(selection_id);
-        }
-    }
 }
 
 fn installed_plugin_for_request(
@@ -560,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn clones_then_removes_matching_popup_selection() {
+    fn clones_matching_popup_selection_without_consuming_it() {
         let popup = Arc::new(Mutex::new(PopupRuntimeState::default()));
         popup
             .lock()
@@ -575,13 +557,17 @@ mod tests {
         );
         assert!(popup.lock().unwrap().get("1").is_some());
 
-        remove_matching_popup_selection(&popup, "1", "quick-search");
+        let second = matching_popup_selection(&popup, "1", "quick-search").unwrap();
 
-        assert!(popup.lock().unwrap().get("1").is_none());
+        assert_eq!(
+            second.context.selected_text,
+            Some("selected".to_string())
+        );
+        assert!(popup.lock().unwrap().get("1").is_some());
     }
 
     #[test]
-    fn does_not_remove_mismatched_popup_selection() {
+    fn ignores_mismatched_popup_selection() {
         let popup = Arc::new(Mutex::new(PopupRuntimeState::default()));
         popup
             .lock()
@@ -589,7 +575,6 @@ mod tests {
             .insert(popup_selection("1", plugin("quick-search")));
 
         let selection = matching_popup_selection(&popup, "1", "other-plugin");
-        remove_matching_popup_selection(&popup, "1", "other-plugin");
 
         assert!(selection.is_none());
         assert!(popup.lock().unwrap().get("1").is_some());
