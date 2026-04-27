@@ -102,9 +102,14 @@ pub fn clamp_popup_position(
         y = mouse_y - popup_h - offset;
     }
 
+    let min_x = monitor.x + offset;
+    let max_x = (right - popup_w - offset).max(min_x);
+    let min_y = monitor.y + offset;
+    let max_y = (bottom - popup_h - offset).max(min_y);
+
     PopupPosition {
-        x: x.max(monitor.x + offset).min(right - popup_w - offset),
-        y: y.max(monitor.y + offset).min(bottom - popup_h - offset),
+        x: x.max(min_x).min(max_x),
+        y: y.max(min_y).min(max_y),
     }
 }
 
@@ -121,12 +126,12 @@ pub fn show_selection_popup(
     mouse_x: f64,
     mouse_y: f64,
 ) -> Result<(), PopupManagerError> {
+    close_selection_popup(app);
+
     let popup_w = plugin.manifest.popup.width as f64;
     let popup_h = plugin.manifest.popup.height as f64;
     let position = resolve_popup_position(app, mouse_x, mouse_y, popup_w, popup_h)
         .ok_or(PopupManagerError::PositionUnavailable)?;
-
-    close_selection_popup(app);
 
     let url = format!("/plugin-popup?selectionId={selection_id}");
     let popup = WebviewWindowBuilder::new(app, "selection-popup", WebviewUrl::App(url.into()))
@@ -344,6 +349,20 @@ mod tests {
                 y: -710.0
             }
         );
+    }
+
+    #[test]
+    fn clamps_to_lower_bound_when_popup_exceeds_safe_monitor_area() {
+        let monitor = MonitorBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 80.0,
+        };
+
+        let pos = clamp_popup_position(50.0, 40.0, 120.0, 90.0, &monitor);
+
+        assert_eq!(pos, PopupPosition { x: 10.0, y: 10.0 });
     }
 
     #[cfg(target_os = "macos")]
