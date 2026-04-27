@@ -47,6 +47,7 @@ struct PluginProtocolRequest {
     content_path: String,
     view_kind: String,
     selection_id: Option<String>,
+    bridge_session: Option<String>,
 }
 
 pub fn register_plugin_protocol<R: tauri::Runtime>(
@@ -76,14 +77,17 @@ pub fn inject_bridge(
     html: &str,
     context: &PluginViewContext,
     view_kind: &str,
+    bridge_session: Option<&str>,
 ) -> Result<String, PluginProtocolError> {
     let context_json = serde_json::to_string(context)?;
     let view_kind_json = serde_json::to_string(view_kind)?;
+    let bridge_session_json = serde_json::to_string(&bridge_session)?;
     let script = format!(
         r#"<script>
 (() => {{
   const context = {context_json};
   const viewKind = {view_kind_json};
+  const bridgeSession = {bridge_session_json};
   let nextMessageId = 1;
   const pending = new Map();
 
@@ -96,6 +100,7 @@ pub fn inject_bridge(
         id,
         pluginId: context.pluginId,
         viewKind,
+        bridgeSession,
         method,
         args
       }}, "*");
@@ -194,6 +199,7 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
             &fs::read_to_string(file_path)?,
             &context,
             &request.view_kind,
+            request.bridge_session.as_deref(),
         )?
         .into_bytes();
         if let Some(selection) = popup_selection {
@@ -266,6 +272,10 @@ fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginP
         .query_pairs()
         .find_map(|(key, value)| (key == "selectionId").then(|| value.into_owned()))
         .filter(|value| !value.is_empty());
+    let bridge_session = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "bridgeSession").then(|| value.into_owned()))
+        .filter(|value| !value.is_empty());
 
     Ok(PluginProtocolRequest {
         plugin_id,
@@ -273,6 +283,7 @@ fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginP
         content_path: decoded_path,
         view_kind,
         selection_id,
+        bridge_session,
     })
 }
 
@@ -420,10 +431,12 @@ mod tests {
             app_version: "0.1.0".to_string(),
         };
 
-        let injected = inject_bridge(html, &context, "popup").unwrap();
+        let injected = inject_bridge(html, &context, "popup", Some("session-1")).unwrap();
 
         assert!(injected.contains("window.ohMySelect"));
         assert!(injected.contains("\"selectedText\":\"hello\""));
+        assert!(injected.contains("const bridgeSession = \"session-1\";"));
+        assert!(injected.contains("bridgeSession,"));
         assert!(injected.find("window.ohMySelect").unwrap() < injected.find("</head>").unwrap());
     }
 
@@ -439,11 +452,22 @@ mod tests {
             app_version: "0.1.0".to_string(),
         };
 
-        let injected = inject_bridge(html, &context, "settings").unwrap();
+        let injected = inject_bridge(html, &context, "settings", None).unwrap();
 
         assert!(injected.starts_with("<script>"));
         assert!(injected.contains("window.ohMySelect"));
+        assert!(injected.contains("const bridgeSession = null;"));
         assert!(injected.ends_with(html));
+    }
+
+    #[test]
+    fn parses_bridge_session_from_query() {
+        let request = parse_plugin_protocol_uri(
+            "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=1&bridgeSession=session-1",
+        )
+        .unwrap();
+
+        assert_eq!(request.bridge_session, Some("session-1".to_string()));
     }
 
     #[test]

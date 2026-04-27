@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import type { PluginBridgeRequest } from "@/lib/plugin-bridge"
 import {
   bridgeClosePopup,
@@ -8,14 +8,12 @@ import {
   pluginStorageSet,
 } from "@/lib/tauri-api"
 import {
+  appendPluginBridgeSession,
   assertPopupBridgeRequest,
-  createPluginBridgeSession,
   getRequiredBridgeValueArg,
   getRequiredStringBridgeArg,
   isPluginBridgeRequest,
   postBridgeResponse,
-  recordPluginFrameLoad,
-  resetPluginBridgeSession,
 } from "@/lib/plugin-bridge"
 
 type PluginFrameViewKind = PluginBridgeRequest["viewKind"]
@@ -36,23 +34,11 @@ export function PluginFrame({
   className,
 }: PluginFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  const bridgeSessionRef = useRef(createPluginBridgeSession(entryUrl))
-
-  useEffect(() => {
-    resetPluginBridgeSession(bridgeSessionRef.current, entryUrl)
-  }, [entryUrl])
-
-  const handleLoad = () => {
-    const loadState = recordPluginFrameLoad(bridgeSessionRef.current)
-
-    if (
-      loadState.shouldResetFrame &&
-      iframeRef.current &&
-      iframeRef.current.getAttribute("src") !== "about:blank"
-    ) {
-      iframeRef.current.src = "about:blank"
-    }
-  }
+  const bridgeSession = useMemo(() => createBridgeSessionToken(), [entryUrl])
+  const iframeSrc = useMemo(
+    () => appendPluginBridgeSession(entryUrl, bridgeSession),
+    [bridgeSession, entryUrl]
+  )
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
@@ -66,13 +52,13 @@ export function PluginFrame({
         return
       }
 
-      if (!bridgeSessionRef.current.bridgeEnabled) {
-        return
-      }
-
       const request = event.data
 
-      if (request.pluginId !== pluginId || request.viewKind !== viewKind) {
+      if (
+        request.pluginId !== pluginId ||
+        request.viewKind !== viewKind ||
+        request.bridgeSession !== bridgeSession
+      ) {
         return
       }
 
@@ -97,18 +83,26 @@ export function PluginFrame({
     window.addEventListener("message", handleMessage)
 
     return () => window.removeEventListener("message", handleMessage)
-  }, [pluginId, viewKind])
+  }, [bridgeSession, pluginId, viewKind])
 
   return (
     <iframe
       ref={iframeRef}
+      key={bridgeSession}
       sandbox="allow-scripts allow-forms"
-      src={entryUrl}
+      src={iframeSrc}
       title={title}
       className={className}
-      onLoad={handleLoad}
     />
   )
+}
+
+function createBridgeSessionToken() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function dispatchBridgeRequest(request: PluginBridgeRequest) {

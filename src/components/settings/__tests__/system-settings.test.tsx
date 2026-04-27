@@ -4,8 +4,14 @@ import { createRequire } from "node:module"
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { SystemSettings } from "../system-settings"
-import type * as TauriApi from "@/lib/tauri-api"
 import type { AppSettingsSnapshot } from "@/lib/tauri-api"
+import {
+  importPluginFolder,
+  removePlugin,
+  setLanguagePreference,
+  setPluginEnabled,
+  setPluginOrder,
+} from "@/lib/tauri-api"
 
 if (typeof document === "undefined") {
   const require = createRequire(import.meta.url)
@@ -25,7 +31,7 @@ if (typeof document === "undefined") {
   })
 }
 
-const tauriApi = vi.hoisted(() => ({
+vi.mock("@/lib/tauri-api", () => ({
   importPluginFolder: vi.fn(),
   removePlugin: vi.fn(),
   setLanguagePreference: vi.fn(),
@@ -33,18 +39,17 @@ const tauriApi = vi.hoisted(() => ({
   setPluginOrder: vi.fn(),
 }))
 
-vi.mock("@/lib/tauri-api", async () => {
-  const actual = await vi.importActual<typeof TauriApi>("@/lib/tauri-api")
-
-  return {
-    ...actual,
-    ...tauriApi,
-  }
-})
-
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }))
+
+const tauriApi = {
+  importPluginFolder: importPluginFolder as ReturnType<typeof vi.fn>,
+  removePlugin: removePlugin as ReturnType<typeof vi.fn>,
+  setLanguagePreference: setLanguagePreference as ReturnType<typeof vi.fn>,
+  setPluginEnabled: setPluginEnabled as ReturnType<typeof vi.fn>,
+  setPluginOrder: setPluginOrder as ReturnType<typeof vi.fn>,
+}
 
 const snapshot: AppSettingsSnapshot = {
   languagePreference: "en",
