@@ -11,6 +11,7 @@ import { Component } from "react"
 import type {
   AppSettingsSnapshot,
   BundledPlugin,
+  CloseWindowBehavior,
   InstalledPlugin,
   LanguagePreference,
 } from "@/lib/tauri-api"
@@ -21,6 +22,7 @@ import {
   importPluginFolder,
   listBundledPlugins,
   removePlugin,
+  setCloseWindowBehavior,
   setLanguagePreference,
   setPluginEnabled,
   setPluginOrder,
@@ -150,32 +152,61 @@ export class SystemSettings extends Component<
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 border-y border-border py-3">
-            <label
-              className="text-xs font-medium text-muted-foreground"
-              htmlFor="language-preference"
-            >
-              {t(snapshot.locale, "language")}
-            </label>
-            <select
-              id="language-preference"
-              className="h-8 min-w-40 border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-50"
-              value={snapshot.languagePreference}
-              disabled={isPending}
-              onChange={(event) => {
-                const languagePreference = event.target
-                  .value as LanguagePreference
-                void this.runAction("language", () =>
-                  setLanguagePreference(languagePreference)
-                )
-              }}
-            >
-              <option value="system">
-                {t(snapshot.locale, "followSystem")}
-              </option>
-              <option value="zh-CN">{t(snapshot.locale, "chinese")}</option>
-              <option value="en">{t(snapshot.locale, "english")}</option>
-            </select>
+          <div className="grid gap-3 border-y border-border py-3 sm:grid-cols-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <label
+                className="text-xs font-medium text-muted-foreground"
+                htmlFor="language-preference"
+              >
+                {t(snapshot.locale, "language")}
+              </label>
+              <select
+                id="language-preference"
+                className="h-8 min-w-40 border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-50"
+                value={snapshot.languagePreference}
+                disabled={isPending}
+                onChange={(event) => {
+                  const languagePreference = event.target
+                    .value as LanguagePreference
+                  void this.runAction("language", () =>
+                    setLanguagePreference(languagePreference)
+                  )
+                }}
+              >
+                <option value="system">
+                  {t(snapshot.locale, "followSystem")}
+                </option>
+                <option value="zh-CN">{t(snapshot.locale, "chinese")}</option>
+                <option value="en">{t(snapshot.locale, "english")}</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label
+                className="text-xs font-medium text-muted-foreground"
+                htmlFor="close-window-behavior"
+              >
+                {t(snapshot.locale, "closeWindowBehavior")}
+              </label>
+              <select
+                id="close-window-behavior"
+                className="h-8 min-w-40 border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-50"
+                value={snapshot.closeWindowBehavior}
+                disabled={isPending}
+                onChange={(event) => {
+                  const closeWindowBehavior = event.target
+                    .value as CloseWindowBehavior
+                  void this.runAction("close-window", () =>
+                    setCloseWindowBehavior(closeWindowBehavior)
+                  )
+                }}
+              >
+                <option value="minimizeToTray">
+                  {t(snapshot.locale, "minimizeToTray")}
+                </option>
+                <option value="quitApp">{t(snapshot.locale, "quitApp")}</option>
+              </select>
+            </div>
           </div>
 
           {errorMessage ? (

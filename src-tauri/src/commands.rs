@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use crate::models::{
-    AppSettingsSnapshot, BundledPlugin, InstalledPlugin, LanguagePreference, PluginSettingsPayload,
-    PopupPayload,
+    AppSettingsSnapshot, BundledPlugin, CloseWindowBehavior, InstalledPlugin, LanguagePreference,
+    PluginSettingsPayload, PopupPayload,
 };
 use crate::plugin_engine::build_view_context;
 use crate::plugin_protocol::plugin_view_html_for_entry_url;
@@ -28,6 +28,7 @@ pub fn get_settings_snapshot(app: AppHandle) -> Result<AppSettingsSnapshot, Stri
     let plugins = registry.list_plugins().map_err(|error| error.to_string())?;
     Ok(AppSettingsSnapshot {
         language_preference: config.language_preference,
+        close_window_behavior: config.close_window_behavior,
         locale,
         plugins,
         app_version: app.package_info().version.to_string(),
@@ -45,6 +46,24 @@ pub fn set_language_preference(
         .load_config()
         .map_err(|error| error.to_string())?;
     config.language_preference = language_preference;
+    state
+        .settings
+        .save_config(&config)
+        .map_err(|error| error.to_string())?;
+    get_settings_snapshot(app)
+}
+
+#[tauri::command]
+pub fn set_close_window_behavior(
+    app: AppHandle,
+    close_window_behavior: CloseWindowBehavior,
+) -> Result<AppSettingsSnapshot, String> {
+    let state = app.state::<AppState>();
+    let mut config = state
+        .settings
+        .load_config()
+        .map_err(|error| error.to_string())?;
+    config.close_window_behavior = close_window_behavior;
     state
         .settings
         .save_config(&config)

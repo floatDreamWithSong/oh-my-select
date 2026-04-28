@@ -679,6 +679,7 @@ mod tests {
         settings
             .save_config(&AppConfig {
                 language_preference: LanguagePreference::En,
+                close_window_behavior: Default::default(),
                 plugins: vec![],
             })
             .unwrap();

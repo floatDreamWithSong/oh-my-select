@@ -9,6 +9,7 @@ pub mod selection_monitor;
 pub mod settings_manager;
 pub mod tray;
 
+use crate::models::CloseWindowBehavior;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -43,12 +44,37 @@ fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin
         .build()
 }
 
+fn handle_window_close<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    if window.label() != "main" {
+        return;
+    }
+
+    let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+        return;
+    };
+
+    let behavior = window
+        .app_handle()
+        .try_state::<app_state::AppState>()
+        .and_then(|state| state.settings.load_config().ok())
+        .map(|config| config.close_window_behavior)
+        .unwrap_or_default();
+
+    if behavior == CloseWindowBehavior::MinimizeToTray {
+        api.prevent_close();
+        if let Err(error) = window.hide() {
+            eprintln!("Failed to hide settings window: {error}");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
     let builder = plugin_protocol::register_plugin_protocol(builder);
 
     builder
+        .on_window_event(handle_window_close)
         .setup(|app| {
             tray::setup_tray(app)?;
             let state = app_state::AppState::from_app(app.handle())?;
@@ -63,6 +89,7 @@ pub fn run() {
             greet,
             commands::get_settings_snapshot,
             commands::set_language_preference,
+            commands::set_close_window_behavior,
             commands::import_plugin_folder,
             commands::list_bundled_plugins,
             commands::import_bundled_plugins,

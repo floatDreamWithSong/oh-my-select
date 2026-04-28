@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core"
 
 export type LanguagePreference = "system" | "zh-CN" | "en"
 
+export type CloseWindowBehavior = "quitApp" | "minimizeToTray"
+
 export type LocalizedText = {
   "zh-CN"?: string
   en?: string
@@ -38,6 +40,7 @@ export type BundledPlugin = {
 
 export type AppSettingsSnapshot = {
   languagePreference: LanguagePreference
+  closeWindowBehavior: CloseWindowBehavior
   locale: "zh-CN" | "en"
   plugins: Array<InstalledPlugin>
   appVersion: string
@@ -50,6 +53,14 @@ export function getSettingsSnapshot() {
 export function setLanguagePreference(languagePreference: LanguagePreference) {
   return invoke<AppSettingsSnapshot>("set_language_preference", {
     languagePreference,
+  })
+}
+
+export function setCloseWindowBehavior(
+  closeWindowBehavior: CloseWindowBehavior
+) {
+  return invoke<AppSettingsSnapshot>("set_close_window_behavior", {
+    closeWindowBehavior,
   })
 }
 

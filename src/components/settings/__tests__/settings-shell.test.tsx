@@ -36,6 +36,7 @@ vi.mock("@/components/settings/plugin-settings-host", () => ({
 
 const snapshot: AppSettingsSnapshot = {
   languagePreference: "en",
+  closeWindowBehavior: "minimizeToTray",
   locale: "en",
   appVersion: "0.1.0",
   plugins: [
