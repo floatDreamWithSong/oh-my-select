@@ -4,6 +4,7 @@ import "./json-core.js"
 const {
   DEFAULT_INDENT,
   formatObject,
+  highlightJson,
   indentOrDefault,
   normalizeIndent,
   parseJsonObjectSelection,
@@ -62,6 +63,22 @@ describe("json previewer core", () => {
   it("formats objects with configured indentation", () => {
     expect(formatObject({ a: 1 }, 2)).toBe('{\n  "a": 1\n}')
     expect(formatObject({ a: 1 }, 0)).toBe('{"a":1}')
+  })
+
+  it("highlights formatted JSON tokens as escaped HTML", () => {
+    const highlighted = highlightJson(
+      '{\n  "name": "oh-my-select",\n  "enabled": true,\n  "count": 2,\n  "empty": null,\n  "html": "<tag>"\n}'
+    )
+
+    expect(highlighted).toContain(
+      '<span class="json-key">&quot;name&quot;</span><span class="json-colon">:</span> <span class="json-string">&quot;oh-my-select&quot;</span>'
+    )
+    expect(highlighted).toContain(
+      '<span class="json-boolean">true</span>'
+    )
+    expect(highlighted).toContain('<span class="json-number">2</span>')
+    expect(highlighted).toContain('<span class="json-null">null</span>')
+    expect(highlighted).toContain("&lt;tag&gt;")
   })
 
   it("serializes objects as JSON string literals containing compact object JSON", () => {

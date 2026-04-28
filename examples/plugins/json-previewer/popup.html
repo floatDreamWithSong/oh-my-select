@@ -84,6 +84,32 @@
         white-space: pre;
       }
 
+      .json-key {
+        color: #0f766e;
+        font-weight: 650;
+      }
+
+      .json-string {
+        color: #15803d;
+      }
+
+      .json-number {
+        color: #7c3aed;
+      }
+
+      .json-boolean {
+        color: #b45309;
+      }
+
+      .json-null {
+        color: #be123c;
+      }
+
+      .json-colon,
+      .json-punctuation {
+        color: #94a3b8;
+      }
+
       .actions {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -162,6 +188,7 @@
       const {
         DEFAULT_INDENT,
         formatObject,
+        highlightJson,
         indentOrDefault,
         parseJsonObjectSelection,
         serializeObject,
@@ -266,7 +293,7 @@
           <section class="preview" aria-label="${escapeAttribute(
             t.preview
           )}" tabindex="0">
-            <pre><code>${escapeHtml(formatted)}</code></pre>
+            <pre><code>${highlightJson(formatted)}</code></pre>
           </section>
           <section class="actions">
             <button type="button" data-copy="deserialized">
