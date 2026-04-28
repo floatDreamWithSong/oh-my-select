@@ -20,6 +20,7 @@
         display: grid;
         min-height: 100vh;
         gap: 10px;
+        grid-template-rows: auto minmax(0, 1fr) auto auto;
         padding: 12px;
       }
 
@@ -63,15 +64,14 @@
 
       .preview {
         min-width: 0;
+        min-height: 0;
         overflow: auto;
         border: 1px solid #d7dee8;
         background: #ffffff;
       }
 
       pre {
-        max-height: 240px;
         margin: 0;
-        overflow: auto;
         padding: 10px;
       }
 
@@ -263,10 +263,12 @@
               t.sourceKind
             )}: ${escapeHtml(sourceKind)}</p>
           </section>
-          <section class="preview" aria-label="${escapeAttribute(t.preview)}">
+          <section class="preview" aria-label="${escapeAttribute(
+            t.preview
+          )}" tabindex="0">
             <pre><code>${escapeHtml(formatted)}</code></pre>
           </section>
-          <section class="actions" aria-label="${escapeAttribute(t.preview)}">
+          <section class="actions">
             <button type="button" data-copy="deserialized">
               ${copyIcon()}
               <span class="button-label">${escapeHtml(
