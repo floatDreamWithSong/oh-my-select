@@ -1,7 +1,14 @@
-const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-const DECIMAL_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)$/
+;(function () {
+  const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+  const DECIMAL_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)$/
 
-export function parseColor(value) {
+  globalThis.ohMySelectColorCore = {
+    parseColor,
+    formatColorOutputs,
+    colorToCss,
+  }
+
+function parseColor(value) {
   const sourceText = typeof value === "string" ? value.trim() : ""
 
   return (
@@ -12,7 +19,7 @@ export function parseColor(value) {
   )
 }
 
-export function formatColorOutputs(color) {
+function formatColorOutputs(color) {
   if (!color) {
     return null
   }
@@ -34,7 +41,7 @@ export function formatColorOutputs(color) {
   }
 }
 
-export function colorToCss(color) {
+function colorToCss(color) {
   if (!color) {
     return "rgba(0, 0, 0, 0)"
   }
@@ -138,7 +145,9 @@ function parseOklch(value) {
   if (
     !args ||
     args.channels.length !== 3 ||
-    !args.channels.every(isFiniteNumber) ||
+    !isOklchLightness(args.channels[0]) ||
+    !isOklchChroma(args.channels[1]) ||
+    !isFiniteNumber(args.channels[2]) ||
     !isOptionalAlpha(args.alpha)
   ) {
     return null
@@ -255,6 +264,16 @@ function isPercent(value) {
 
   const numeric = parseDecimal(value.slice(0, -1))
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
+}
+
+function isOklchLightness(value) {
+  const numeric = parseDecimal(value)
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1
+}
+
+function isOklchChroma(value) {
+  const numeric = parseDecimal(value)
+  return Number.isFinite(numeric) && numeric >= 0
 }
 
 function isFiniteNumber(value) {
@@ -475,3 +494,4 @@ function wrapHue(value) {
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
+})()

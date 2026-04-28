@@ -3,7 +3,6 @@ use crate::models::{
     AppSettingsSnapshot, InstalledPlugin, LanguagePreference, PluginSettingsPayload, PopupPayload,
 };
 use crate::plugin_engine::build_view_context;
-use crate::plugin_protocol::plugin_view_html_for_entry_url;
 use crate::plugin_registry::PluginRegistry;
 use crate::popup_manager::close_selection_popup;
 use serde_json::Value;
@@ -153,11 +152,6 @@ pub fn get_plugin_settings_payload(
 }
 
 #[tauri::command]
-pub fn get_plugin_view_html(app: AppHandle, entry_url: String) -> Result<String, String> {
-    plugin_view_html_for_entry_url(&app, &entry_url).map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn plugin_storage_get(
     app: AppHandle,
     plugin_id: String,
@@ -268,6 +262,7 @@ fn popup_entry_url(plugin: &InstalledPlugin, selection_id: &str) -> String {
 }
 
 fn plugin_entry_url(plugin_id: &str, entry: &str, query: &[(&str, &str)]) -> String {
+    let plugin_id = urlencoding::encode(plugin_id);
     let path = entry
         .split('/')
         .map(urlencoding::encode)
@@ -285,7 +280,7 @@ fn plugin_entry_url(plugin_id: &str, entry: &str, query: &[(&str, &str)]) -> Str
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("oms-plugin://{plugin_id}/{path}?{query}")
+    format!("oms-plugin://localhost/{plugin_id}/{path}?{query}")
 }
 
 #[cfg(test)]
@@ -332,7 +327,7 @@ mod tests {
 
         assert_eq!(
             url,
-            "oms-plugin://quick-search/popup%20dir/index%20100%25.html?viewKind=popup&selectionId=selection%201%26next%3D%25"
+            "oms-plugin://localhost/quick-search/popup%20dir/index%20100%25.html?viewKind=popup&selectionId=selection%201%26next%3D%25"
         );
     }
 
@@ -346,7 +341,7 @@ mod tests {
 
         assert_eq!(
             url,
-            "oms-plugin://quick-search/settings%20dir/a%26b%20100%25.html?viewKind=settings"
+            "oms-plugin://localhost/quick-search/settings%20dir/a%26b%20100%25.html?viewKind=settings"
         );
     }
 

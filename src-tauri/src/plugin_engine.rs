@@ -1,5 +1,5 @@
 use crate::models::{InstalledPlugin, PluginViewContext};
-use rquickjs::{Context, Runtime};
+use rquickjs::{CatchResultExt, CaughtError, Context, Runtime};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ pub enum PluginEngineError {
     #[error("failed to serialize matcher context: {0}")]
     Json(#[from] serde_json::Error),
     #[error("failed to execute matcher: {0}")]
-    JavaScript(#[from] rquickjs::Error),
+    JavaScript(String),
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +101,7 @@ impl PluginEngine {
             "pluginId": plugin.id,
             "pluginVersion": plugin.manifest.version,
         }))?;
-        Ok(evaluate_matcher(&normalized, &context_json)?)
+        evaluate_matcher(&normalized, &context_json).map_err(PluginEngineError::JavaScript)
     }
 }
 
@@ -128,13 +128,13 @@ fn normalize_matcher_source(source: &str) -> String {
         .replace("export const match =", "const match =")
 }
 
-fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, rquickjs::Error> {
-    let runtime = Runtime::new()?;
+fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, String> {
+    let runtime = Runtime::new().map_err(|error| error.to_string())?;
     runtime.set_memory_limit(8 * 1024 * 1024);
     runtime.set_max_stack_size(256 * 1024);
+    let context = Context::full(&runtime).map_err(|error| error.to_string())?;
     let deadline = Instant::now() + MATCHER_TIMEOUT;
     runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
-    let context = Context::full(&runtime)?;
 
     context.with(|ctx| {
         let script = format!(
@@ -147,8 +147,24 @@ fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, rquickjs::
             match(__context) === true;
             "#
         );
-        ctx.eval::<bool, _>(script)
+        ctx.eval::<bool, _>(script).catch(&ctx).map_err(format_caught_error)
     })
+}
+
+fn format_caught_error(error: CaughtError<'_>) -> String {
+    match error {
+        CaughtError::Error(error) => error.to_string(),
+        CaughtError::Exception(exception) => {
+            let message = exception
+                .message()
+                .unwrap_or_else(|| "JavaScript exception".to_string());
+            match exception.stack() {
+                Some(stack) if !stack.is_empty() => format!("{message}\n{stack}"),
+                _ => message,
+            }
+        }
+        CaughtError::Value(value) => format!("JavaScript threw non-Error value: {value:?}"),
+    }
 }
 
 #[cfg(test)]
@@ -198,6 +214,38 @@ mod tests {
         }
     }
 
+    fn example_plugins_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("examples")
+            .join("plugins")
+    }
+
+    fn example_plugin(id: &str, width: u32, height: u32) -> InstalledPlugin {
+        InstalledPlugin {
+            id: id.to_string(),
+            enabled: true,
+            has_settings: false,
+            manifest: PluginManifest {
+                id: id.to_string(),
+                name: LocalizedText {
+                    zh_cn: Some(id.to_string()),
+                    en: Some(id.to_string()),
+                },
+                version: "0.1.0".to_string(),
+                matcher: "matcher.js".to_string(),
+                popup: PopupManifest {
+                    entry: "popup.html".to_string(),
+                    width,
+                    height,
+                },
+                settings: None,
+                permissions: PluginPermissions::default(),
+            },
+        }
+    }
+
     #[test]
     fn returns_first_enabled_matching_plugin() {
         let root = temp_dir("first-match");
@@ -229,6 +277,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.plugin.id, "second");
+    }
+
+    #[test]
+    fn repository_quick_search_matcher_runs_in_quickjs() {
+        let root = example_plugins_root();
+        let engine = PluginEngine::new(root);
+        let plugin = example_plugin("quick-search", 360, 220);
+
+        assert!(engine.match_plugin(&plugin, "hello", "en").unwrap());
+    }
+
+    #[test]
+    fn repository_color_converter_matcher_runs_in_quickjs() {
+        let root = example_plugins_root();
+        let engine = PluginEngine::new(root);
+        let plugin = example_plugin("color-converter", 380, 300);
+
+        assert!(engine.match_plugin(&plugin, "#22c55e", "en").unwrap());
+        assert!(!engine.match_plugin(&plugin, "hello", "en").unwrap());
     }
 
     #[test]
@@ -299,6 +366,25 @@ mod tests {
         let error = engine.match_plugin(&broken, "hello", "en").unwrap_err();
 
         assert!(matches!(error, PluginEngineError::JavaScript(_)));
+    }
+
+    #[test]
+    fn matcher_errors_include_javascript_message() {
+        let root = temp_dir("js-error-message");
+        let broken = plugin(
+            &root,
+            "broken",
+            "export function match() { throw new Error('bad matcher') }",
+            true,
+        );
+        let engine = PluginEngine::new(root);
+
+        let error = engine.match_plugin(&broken, "hello", "en").unwrap_err();
+
+        assert!(
+            error.to_string().contains("bad matcher"),
+            "expected matcher error to include JavaScript message, got: {error}"
+        );
     }
 
     #[test]

@@ -46,7 +46,9 @@ describe("color converter plugin package", () => {
   it("loads the conversion core from the popup", async () => {
     const popup = await readFile(join(pluginDir, "popup.html"), "utf8")
 
-    expect(popup).toContain('from "./color-core.js"')
+    expect(popup).toContain('<script src="./color-core.js"></script>')
+    expect(popup).not.toContain('type="module"')
+    expect(popup).not.toContain('from "./color-core.js"')
     expect(popup).toContain('id="swatch-color"')
     expect(popup).toContain('aria-live="polite"')
   })

@@ -69,7 +69,6 @@ pub fn run() {
             commands::remove_plugin,
             commands::get_popup_payload,
             commands::get_plugin_settings_payload,
-            commands::get_plugin_view_html,
             commands::plugin_storage_get,
             commands::plugin_storage_set,
             commands::plugin_storage_remove,

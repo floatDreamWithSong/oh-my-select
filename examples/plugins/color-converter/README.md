@@ -7,7 +7,7 @@ Example oh-my-select plugin for selected CSS color values.
 - HEX: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`
 - RGB/RGBA: decimal channels from `0` to `255`, comma or modern space syntax, optional alpha as `0`-`1` or a percent
 - HSL/HSLA: numeric hue, saturation and lightness percentages, comma or modern space syntax, optional alpha as `0`-`1` or a percent
-- OKLCH: decimal lightness, chroma, and hue channels, optional alpha as `0`-`1` or a percent
+- OKLCH: decimal lightness from `0`-`1`, non-negative chroma, and hue channels, optional alpha as `0`-`1` or a percent
 
 HEX matching is case-insensitive. HEX output is uppercase.
 
