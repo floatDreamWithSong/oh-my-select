@@ -1,0 +1,4 @@
+interface:
+  display_name: "Oh My Select Plugin"
+  short_description: "Build local selected-text plugins"
+  default_prompt: "Use $oh-my-select-plugin to build a local oh-my-select plugin for a selected-text workflow."
