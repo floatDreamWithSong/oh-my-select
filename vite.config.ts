@@ -15,7 +15,7 @@ const config = defineConfig({
       projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
-    tanstackStart({ spa: { enabled: true } }),
+    tanstackStart({ spa: { enabled: true, prerender: { enabled: true, outputPath: 'index.html' } } }),
     viteReact(),
   ],
   server: {
