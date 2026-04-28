@@ -10,6 +10,7 @@ import {
   importPluginFolder,
   listBundledPlugins,
   removePlugin,
+  setCloseWindowBehavior,
   setLanguagePreference,
   setPluginEnabled,
   setPluginOrder,
@@ -38,6 +39,7 @@ vi.mock("@/lib/tauri-api", () => ({
   importPluginFolder: vi.fn(),
   listBundledPlugins: vi.fn(),
   removePlugin: vi.fn(),
+  setCloseWindowBehavior: vi.fn(),
   setLanguagePreference: vi.fn(),
   setPluginEnabled: vi.fn(),
   setPluginOrder: vi.fn(),
@@ -52,6 +54,7 @@ const tauriApi = {
   importPluginFolder: importPluginFolder as ReturnType<typeof vi.fn>,
   listBundledPlugins: listBundledPlugins as ReturnType<typeof vi.fn>,
   removePlugin: removePlugin as ReturnType<typeof vi.fn>,
+  setCloseWindowBehavior: setCloseWindowBehavior as ReturnType<typeof vi.fn>,
   setLanguagePreference: setLanguagePreference as ReturnType<typeof vi.fn>,
   setPluginEnabled: setPluginEnabled as ReturnType<typeof vi.fn>,
   setPluginOrder: setPluginOrder as ReturnType<typeof vi.fn>,
@@ -59,6 +62,7 @@ const tauriApi = {
 
 const snapshot: AppSettingsSnapshot = {
   languagePreference: "en",
+  closeWindowBehavior: "minimizeToTray",
   locale: "en",
   appVersion: "0.1.0",
   plugins: [
@@ -141,6 +145,33 @@ describe("SystemSettings", () => {
     })
   })
 
+  it("persists close window behavior changes", async () => {
+    tauriApi.setCloseWindowBehavior.mockResolvedValueOnce({
+      ...snapshot,
+      closeWindowBehavior: "quitApp",
+    })
+    const onSnapshotChange = vi.fn()
+
+    const { getByLabelText } = render(
+      <SystemSettings
+        snapshot={snapshot}
+        onSnapshotChange={onSnapshotChange}
+      />
+    )
+
+    fireEvent.change(getByLabelText("When closing window"), {
+      target: { value: "quitApp" },
+    })
+
+    await waitFor(() => {
+      expect(tauriApi.setCloseWindowBehavior).toHaveBeenCalledWith("quitApp")
+      expect(onSnapshotChange).toHaveBeenCalledWith({
+        ...snapshot,
+        closeWindowBehavior: "quitApp",
+      })
+    })
+  })
+
   it("opens bundled plugin dialog and imports selected plugins", async () => {
     tauriApi.listBundledPlugins.mockResolvedValueOnce([
       {
@@ -156,7 +187,7 @@ describe("SystemSettings", () => {
       },
       {
         id: "quick-search",
-        manifest: snapshot.plugins[0]!.manifest,
+        manifest: snapshot.plugins[0].manifest,
       },
     ])
     tauriApi.importBundledPlugins.mockResolvedValueOnce({

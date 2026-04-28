@@ -17,6 +17,20 @@ impl Default for LanguagePreference {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CloseWindowBehavior {
+    #[serde(rename = "quitApp")]
+    QuitApp,
+    #[serde(rename = "minimizeToTray")]
+    MinimizeToTray,
+}
+
+impl Default for CloseWindowBehavior {
+    fn default() -> Self {
+        Self::MinimizeToTray
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginConfigEntry {
     pub id: String,
@@ -28,6 +42,8 @@ pub struct PluginConfigEntry {
 pub struct AppConfig {
     #[serde(default)]
     pub language_preference: LanguagePreference,
+    #[serde(default)]
+    pub close_window_behavior: CloseWindowBehavior,
     #[serde(default)]
     pub plugins: Vec<PluginConfigEntry>,
 }
@@ -105,6 +121,7 @@ pub struct PluginViewContext {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettingsSnapshot {
     pub language_preference: LanguagePreference,
+    pub close_window_behavior: CloseWindowBehavior,
     pub locale: String,
     pub plugins: Vec<InstalledPlugin>,
     pub app_version: String,

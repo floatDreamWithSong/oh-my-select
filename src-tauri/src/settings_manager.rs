@@ -133,7 +133,7 @@ fn atomic_write(path: &PathBuf, content: String) -> Result<(), SettingsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AppConfig, LanguagePreference, PluginConfigEntry};
+    use crate::models::{AppConfig, CloseWindowBehavior, LanguagePreference, PluginConfigEntry};
     use std::fs;
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -153,6 +153,10 @@ mod tests {
         let config = manager.load_config().unwrap();
 
         assert_eq!(config.language_preference, LanguagePreference::System);
+        assert_eq!(
+            config.close_window_behavior,
+            CloseWindowBehavior::MinimizeToTray
+        );
         assert!(config.plugins.is_empty());
     }
 
@@ -161,6 +165,7 @@ mod tests {
         let manager = SettingsManager::new(temp_dir("roundtrip"));
         let config = AppConfig {
             language_preference: LanguagePreference::En,
+            close_window_behavior: CloseWindowBehavior::QuitApp,
             plugins: vec![PluginConfigEntry {
                 id: "quick-search".to_string(),
                 enabled: true,
