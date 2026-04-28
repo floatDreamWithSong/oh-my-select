@@ -23,6 +23,10 @@ describe("json previewer popup", () => {
     expect(dom.window.document.querySelector("code").textContent).toContain(
       '    "name": "oh-my-select"'
     )
+    expect(dom.window.document.querySelector(".preview").tabIndex).toBe(0)
+    expect(
+      dom.window.document.querySelector(".actions").hasAttribute("aria-label")
+    ).toBe(false)
   })
 
   it("renders serialized JSON string input as the decoded object", async () => {
