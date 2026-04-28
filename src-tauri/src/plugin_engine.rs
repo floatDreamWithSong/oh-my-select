@@ -299,6 +299,25 @@ mod tests {
     }
 
     #[test]
+    fn repository_time_converter_matcher_runs_in_quickjs() {
+        let root = example_plugins_root();
+        let engine = PluginEngine::new(root);
+        let plugin = example_plugin("time-converter", 420, 340);
+
+        for sample in [
+            "1714298400",
+            "2026-04-28 10:30:00",
+            "Tue, 28 Apr 2026 10:30:00 GMT",
+        ] {
+            assert!(engine.match_plugin(&plugin, sample, "en").unwrap());
+        }
+
+        for sample in ["hello", "2026-02-30", "date: 2026-04-28"] {
+            assert!(!engine.match_plugin(&plugin, sample, "en").unwrap());
+        }
+    }
+
+    #[test]
     fn skips_disabled_plugins() {
         let root = temp_dir("disabled");
         let plugins = vec![
