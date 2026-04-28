@@ -46,6 +46,8 @@ describe("json previewer core", () => {
     expect(parseJsonObjectSelection("123")).toBeNull()
     expect(parseJsonObjectSelection("null")).toBeNull()
     expect(parseJsonObjectSelection("true")).toBeNull()
+    expect(parseJsonObjectSelection("{")).toBeNull()
+    expect(parseJsonObjectSelection('{"a":')).toBeNull()
     expect(parseJsonObjectSelection('{"a":1} trailing')).toBeNull()
     expect(parseJsonObjectSelection("")).toBeNull()
     expect(parseJsonObjectSelection(null)).toBeNull()
