@@ -83,6 +83,13 @@ pub struct InstalledPlugin {
     pub has_settings: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BundledPlugin {
+    pub id: String,
+    pub manifest: PluginManifest,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginViewContext {

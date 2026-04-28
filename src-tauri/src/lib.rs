@@ -64,6 +64,8 @@ pub fn run() {
             commands::get_settings_snapshot,
             commands::set_language_preference,
             commands::import_plugin_folder,
+            commands::list_bundled_plugins,
+            commands::import_bundled_plugins,
             commands::set_plugin_enabled,
             commands::set_plugin_order,
             commands::remove_plugin,

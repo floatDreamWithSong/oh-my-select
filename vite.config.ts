@@ -1,4 +1,4 @@
-import { defineConfig } from "vite"
+import { configDefaults, defineConfig } from "vitest/config"
 import { devtools } from "@tanstack/devtools-vite"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import viteReact from "@vitejs/plugin-react"
@@ -15,9 +15,14 @@ const config = defineConfig({
       projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
-    tanstackStart({ spa: { enabled: true, prerender: { enabled: true, outputPath: 'index.html' } } }),
+    tanstackStart({
+      spa: { enabled: true, prerender: { enabled: true, outputPath: "index.html" } },
+    }),
     viteReact(),
   ],
+  test: {
+    exclude: [...configDefaults.exclude, "src-tauri/target/**"],
+  },
   server: {
     port: 1420,
     strictPort: true,

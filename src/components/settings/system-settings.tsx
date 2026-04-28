@@ -1,15 +1,25 @@
 import { open } from "@tauri-apps/plugin-dialog"
-import { ArrowDown, ArrowUp, FolderPlus, Power, Trash2 } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  FolderPlus,
+  PackagePlus,
+  Power,
+  Trash2,
+} from "lucide-react"
 import { Component } from "react"
 import type {
   AppSettingsSnapshot,
+  BundledPlugin,
   InstalledPlugin,
   LanguagePreference,
 } from "@/lib/tauri-api"
 import { Button } from "@/components/ui/button"
 import { localizedName, t } from "@/lib/i18n"
 import {
+  importBundledPlugins,
   importPluginFolder,
+  listBundledPlugins,
   removePlugin,
   setLanguagePreference,
   setPluginEnabled,
@@ -24,6 +34,9 @@ type SystemSettingsProps = {
 type SystemSettingsState = {
   errorMessage: string | null
   pendingAction: string | null
+  bundledDialogOpen: boolean
+  bundledPlugins: Array<BundledPlugin>
+  selectedBundledPluginIds: Array<string>
 }
 
 export class SystemSettings extends Component<
@@ -35,6 +48,9 @@ export class SystemSettings extends Component<
   state: SystemSettingsState = {
     errorMessage: null,
     pendingAction: null,
+    bundledDialogOpen: false,
+    bundledPlugins: [],
+    selectedBundledPluginIds: [],
   }
 
   runAction = async (
@@ -76,6 +92,45 @@ export class SystemSettings extends Component<
     pluginIds.splice(nextIndex, 0, pluginId)
 
     void this.runAction(`order:${pluginId}`, () => setPluginOrder(pluginIds))
+  }
+
+  openBundledPluginDialog = () => {
+    void this.runAction("list-bundled", async () => {
+      const bundledPlugins = await listBundledPlugins()
+      this.setState({
+        bundledDialogOpen: true,
+        bundledPlugins,
+        selectedBundledPluginIds: [],
+      })
+      return null
+    })
+  }
+
+  toggleBundledPlugin = (pluginId: string) => {
+    this.setState((state) => ({
+      selectedBundledPluginIds: state.selectedBundledPluginIds.includes(
+        pluginId
+      )
+        ? state.selectedBundledPluginIds.filter((id) => id !== pluginId)
+        : [...state.selectedBundledPluginIds, pluginId],
+    }))
+  }
+
+  importSelectedBundledPlugins = () => {
+    const pluginIds = this.state.selectedBundledPluginIds
+    if (pluginIds.length === 0) {
+      return
+    }
+
+    void this.runAction("import-bundled", async () => {
+      const nextSnapshot = await importBundledPlugins(pluginIds)
+      this.setState({
+        bundledDialogOpen: false,
+        bundledPlugins: [],
+        selectedBundledPluginIds: [],
+      })
+      return nextSnapshot
+    })
   }
 
   render() {
@@ -138,25 +193,37 @@ export class SystemSettings extends Component<
             <h2 className="text-sm font-semibold">
               {t(snapshot.locale, "pluginGroup")}
             </h2>
-            <Button
-              type="button"
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                void this.runAction("import", async () => {
-                  const selectedPath = await open({
-                    directory: true,
-                    multiple: false,
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isPending}
+                onClick={this.openBundledPluginDialog}
+              >
+                <PackagePlus />
+                <span>{t(snapshot.locale, "importBundledPlugin")}</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending}
+                onClick={() => {
+                  void this.runAction("import", async () => {
+                    const selectedPath = await open({
+                      directory: true,
+                      multiple: false,
+                    })
+                    return typeof selectedPath === "string"
+                      ? importPluginFolder(selectedPath)
+                      : null
                   })
-                  return typeof selectedPath === "string"
-                    ? importPluginFolder(selectedPath)
-                    : null
-                })
-              }}
-            >
-              <FolderPlus />
-              <span>{t(snapshot.locale, "importPlugin")}</span>
-            </Button>
+                }}
+              >
+                <FolderPlus />
+                <span>{t(snapshot.locale, "importCustomPlugin")}</span>
+              </Button>
+            </div>
           </div>
 
           {snapshot.plugins.length === 0 ? (
@@ -190,6 +257,24 @@ export class SystemSettings extends Component<
             </div>
           )}
         </section>
+
+        {this.state.bundledDialogOpen ? (
+          <BundledPluginDialog
+            snapshot={snapshot}
+            plugins={this.state.bundledPlugins}
+            selectedPluginIds={this.state.selectedBundledPluginIds}
+            isPending={isPending}
+            onToggle={this.toggleBundledPlugin}
+            onCancel={() => {
+              this.setState({
+                bundledDialogOpen: false,
+                bundledPlugins: [],
+                selectedBundledPluginIds: [],
+              })
+            }}
+            onImport={this.importSelectedBundledPlugins}
+          />
+        ) : null}
       </div>
     )
   }
@@ -287,6 +372,116 @@ function PluginRow({
         >
           <Trash2 />
         </Button>
+      </div>
+    </div>
+  )
+}
+
+function BundledPluginDialog({
+  snapshot,
+  plugins,
+  selectedPluginIds,
+  isPending,
+  onToggle,
+  onCancel,
+  onImport,
+}: {
+  snapshot: AppSettingsSnapshot
+  plugins: Array<BundledPlugin>
+  selectedPluginIds: Array<string>
+  isPending: boolean
+  onToggle: (pluginId: string) => void
+  onCancel: () => void
+  onImport: () => void
+}) {
+  const installedPluginIds = new Set(snapshot.plugins.map((plugin) => plugin.id))
+  const canImport = selectedPluginIds.length > 0 && !isPending
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bundled-plugin-dialog-title"
+        className="flex max-h-[min(520px,calc(100vh-2rem))] w-full max-w-xl flex-col border border-border bg-background shadow-lg"
+      >
+        <div className="border-b border-border px-4 py-3">
+          <h3 id="bundled-plugin-dialog-title" className="text-sm font-semibold">
+            {t(snapshot.locale, "importBundledPluginDialogTitle")}
+          </h3>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto">
+          {plugins.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {t(snapshot.locale, "noBundledPlugins")}
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {plugins.map((plugin) => {
+                const installed = installedPluginIds.has(plugin.id)
+                const checked = selectedPluginIds.includes(plugin.id)
+                const inputId = `bundled-plugin-${plugin.id}`
+                const name = localizedName(snapshot.locale, plugin.manifest.name)
+
+                return (
+                  <label
+                    key={plugin.id}
+                    htmlFor={inputId}
+                    className="flex cursor-pointer items-start gap-3 px-4 py-3 has-disabled:cursor-default has-disabled:opacity-60"
+                  >
+                    <input
+                      id={inputId}
+                      aria-label={name}
+                      type="checkbox"
+                      className="mt-1 size-4 accent-primary"
+                      checked={checked}
+                      disabled={installed || isPending}
+                      onChange={() => onToggle(plugin.id)}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {name}
+                        </span>
+                        {installed ? (
+                          <span className="border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                            {t(snapshot.locale, "installed")}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="truncate">{plugin.id}</span>
+                        <span>v{plugin.manifest.version}</span>
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={onCancel}
+          >
+            {t(snapshot.locale, "cancel")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canImport}
+            onClick={onImport}
+          >
+            <PackagePlus />
+            <span>{t(snapshot.locale, "importSelected")}</span>
+          </Button>
+        </div>
       </div>
     </div>
   )
