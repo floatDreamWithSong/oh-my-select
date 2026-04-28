@@ -1,0 +1,21 @@
+{
+  "id": "json-previewer",
+  "name": {
+    "zh-CN": "JSON 预览器",
+    "en": "JSON Previewer"
+  },
+  "version": "0.1.0",
+  "matcher": "matcher.js",
+  "popup": {
+    "entry": "popup.html",
+    "width": 460,
+    "height": 420
+  },
+  "settings": {
+    "entry": "settings.html"
+  },
+  "permissions": {
+    "openExternal": false,
+    "storage": true
+  }
+}
