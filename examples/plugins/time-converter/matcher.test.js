@@ -11,6 +11,8 @@ describe("time converter matcher", () => {
     "2026-04-28T10:30:00Z",
     "2026-04-28T10:30:00+08:00",
     "2026/04/28 10:30:00",
+    "April 28, 2026",
+    "April 28, 2026 10:30:00 +08:00",
     "Tue, 28 Apr 2026 10:30:00 GMT",
   ])("accepts %s", (selectedText) => {
     expect(match({ selectedText })).toBe(true)
@@ -27,8 +29,12 @@ describe("time converter matcher", () => {
     "2026-13-01",
     "2026-04-28 24:00:00",
     "2026-04-28 10:60:00",
+    "April 28, 2026 24:00",
+    "April 28, 2026 10:60",
+    "April 28, 2026 10:30:60",
     "April 31, 2026",
     "Feb 30 2026",
+    "Mon, 28 Apr 2026 10:30:00 GMT",
     "Tue, 31 Apr 2026 10:30:00 GMT",
     "date: 2026-04-28",
     "foo 2026-04-28",
