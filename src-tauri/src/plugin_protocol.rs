@@ -38,6 +38,8 @@ pub enum PluginProtocolError {
     Io(#[from] std::io::Error),
     #[error("failed to build plugin protocol response: {0}")]
     Http(#[from] http::Error),
+    #[error("plugin entry is not an HTML document")]
+    NotHtml,
 }
 
 #[derive(Debug)]
@@ -161,9 +163,21 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     uri: &str,
 ) -> Result<http::Response<Vec<u8>>, PluginProtocolError> {
-    let resource = load_plugin_resource(app, uri)?;
+    let resource = load_plugin_resource(app, uri, false)?;
 
     response(StatusCode::OK, resource.content_type, resource.body)
+}
+
+pub fn plugin_view_html_for_entry_url<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    entry_url: &str,
+) -> Result<String, PluginProtocolError> {
+    let resource = load_plugin_resource(app, entry_url, true)?;
+    if !resource.content_type.starts_with("text/html") {
+        return Err(PluginProtocolError::NotHtml);
+    }
+
+    String::from_utf8(resource.body).map_err(PluginProtocolError::Decode)
 }
 
 struct PluginResource {
@@ -174,6 +188,7 @@ struct PluginResource {
 fn load_plugin_resource<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     uri: &str,
+    inline_local_scripts: bool,
 ) -> Result<PluginResource, PluginProtocolError> {
     let request = parse_plugin_protocol_uri(uri)?;
     let (settings, popup) = {
@@ -208,8 +223,14 @@ fn load_plugin_resource<R: tauri::Runtime>(
             config.language_preference,
             app.package_info().version.to_string(),
         );
+        let html = fs::read_to_string(&file_path)?;
+        let html = if inline_local_scripts {
+            inline_script_src_tags(&html, &plugin_dir, &request.file_path)?
+        } else {
+            html
+        };
         let body = inject_bridge(
-            &fs::read_to_string(file_path)?,
+            &html,
             &context,
             &request.view_kind,
             request.bridge_session.as_deref(),
@@ -231,6 +252,102 @@ fn matching_popup_selection(
     let state = popup.lock().ok()?;
     let selection = state.get(selection_id)?;
     (selection.plugin.id == plugin_id).then_some(selection)
+}
+
+fn inline_script_src_tags(
+    html: &str,
+    plugin_dir: &Path,
+    html_path: &Path,
+) -> Result<String, PluginProtocolError> {
+    let mut output = String::with_capacity(html.len());
+    let mut remaining = html;
+
+    loop {
+        let Some(script_start) = remaining.to_ascii_lowercase().find("<script") else {
+            output.push_str(remaining);
+            return Ok(output);
+        };
+        output.push_str(&remaining[..script_start]);
+        remaining = &remaining[script_start..];
+
+        let Some(open_end) = remaining.find('>') else {
+            output.push_str(remaining);
+            return Ok(output);
+        };
+        let open_tag = &remaining[..=open_end];
+        let Some(src) = script_src_attr(open_tag) else {
+            output.push_str(open_tag);
+            remaining = &remaining[open_end + 1..];
+            continue;
+        };
+
+        let Some(close_start) = remaining[open_end + 1..]
+            .to_ascii_lowercase()
+            .find("</script>")
+            .map(|index| open_end + 1 + index)
+        else {
+            output.push_str(open_tag);
+            remaining = &remaining[open_end + 1..];
+            continue;
+        };
+        let close_end = close_start + "</script>".len();
+
+        if let Some(script_path) = local_script_path(html_path, &src) {
+            let script_file = resolve_plugin_file_path(plugin_dir, &script_path)?;
+            let script = fs::read_to_string(script_file)?;
+            output.push_str("<script>");
+            output.push_str(&script.replace("</script>", "<\\/script>"));
+            output.push_str("</script>");
+        } else {
+            output.push_str(&remaining[..close_end]);
+        }
+
+        remaining = &remaining[close_end..];
+    }
+}
+
+fn script_src_attr(script_open_tag: &str) -> Option<String> {
+    for quote in ['"', '\''] {
+        for prefix in [format!(" src={quote}"), format!("\tsrc={quote}")] {
+            if let Some(start) = script_open_tag.find(&prefix) {
+                let value_start = start + prefix.len();
+                let value_end = script_open_tag[value_start..].find(quote)? + value_start;
+                return Some(script_open_tag[value_start..value_end].to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn local_script_path(html_path: &Path, src: &str) -> Option<PathBuf> {
+    if src.starts_with("http:")
+        || src.starts_with("https:")
+        || src.starts_with("data:")
+        || src.starts_with("blob:")
+        || src.starts_with("javascript:")
+        || src.starts_with('/')
+        || src.contains('\\')
+    {
+        return None;
+    }
+
+    let path_without_query = src.split(['?', '#']).next()?;
+    let html_dir = html_path.parent().unwrap_or_else(|| Path::new(""));
+    let script_path = html_dir.join(path_without_query);
+    sanitize_plugin_file_path(&path_to_forward_slash(&script_path)?)
+}
+
+fn path_to_forward_slash(path: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_str()?),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    Some(parts.join("/"))
 }
 
 fn installed_plugin_for_request(
@@ -480,6 +597,43 @@ mod tests {
         assert_eq!(request.plugin_id, "color-converter");
         assert_eq!(request.file_path, PathBuf::from("color-core.js"));
         assert_eq!(request.content_path, "color-core.js");
+    }
+
+    #[test]
+    fn inlines_local_script_src_tags_for_srcdoc_views() {
+        let root = temp_dir("inline-scripts");
+        let plugin_dir = root.join("plugin");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("core.js"),
+            "window.PluginCore = { ok: true };\n",
+        )
+        .unwrap();
+        let html = r#"<body><script src="./core.js"></script><script>window.ready = true;</script></body>"#;
+
+        let inlined =
+            inline_script_src_tags(html, &plugin_dir, &PathBuf::from("popup.html")).unwrap();
+
+        assert!(inlined.contains("<script>window.PluginCore = { ok: true };\n</script>"));
+        assert!(!inlined.contains(r#"src="./core.js""#));
+        assert!(inlined.contains("<script>window.ready = true;</script>"));
+    }
+
+    #[test]
+    fn resolves_local_script_src_tags_relative_to_html_directory() {
+        let root = temp_dir("inline-nested-scripts");
+        let plugin_dir = root.join("plugin");
+        fs::create_dir_all(plugin_dir.join("nested")).unwrap();
+        fs::write(plugin_dir.join("nested").join("core.js"), "window.nested = true;").unwrap();
+
+        let inlined = inline_script_src_tags(
+            r#"<script src="./core.js"></script>"#,
+            &plugin_dir,
+            &PathBuf::from("nested/popup.html"),
+        )
+        .unwrap();
+
+        assert!(inlined.contains("window.nested = true;"));
     }
 
     #[test]
