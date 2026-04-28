@@ -8,16 +8,20 @@ export function match(context) {
 const LOCAL_NUMERIC_RE =
   /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,3}))?)?)?)?$/
 const ISO_DATE_PARTS_RE =
-  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?/
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?(?:Z|[+-]\d{2}:?\d{2})$/
 const MONTH_NAME_PATTERN =
   "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+const WEEKDAY_PATTERN =
+  "(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
+const NAMED_MONTH_TIME_SUFFIX_PATTERN =
+  "(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:\\s*(?:GMT|UTC|[+-]\\d{2}:?\\d{2}))?)?"
 const MONTH_NAME_RE = new RegExp(`\\b${MONTH_NAME_PATTERN}\\b`, "i")
 const MONTH_FIRST_DATE_RE = new RegExp(
-  `\\b(${MONTH_NAME_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})\\b`,
+  `^(${MONTH_NAME_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_SUFFIX_PATTERN}$`,
   "i"
 )
 const DAY_FIRST_DATE_RE = new RegExp(
-  `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAME_PATTERN})(?:,)?\\s+(\\d{4})\\b`,
+  `^(?:${WEEKDAY_PATTERN},\\s*)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAME_PATTERN})(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_SUFFIX_PATTERN}$`,
   "i"
 )
 const MONTH_BY_NAME = {
@@ -151,7 +155,7 @@ function dateFromLocalMatch(matchResult) {
 }
 
 function looksLikeFormattedTime(value) {
-  return /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value)
+  return ISO_DATE_PARTS_RE.test(value)
 }
 
 function getNamedMonthDateParts(value) {
