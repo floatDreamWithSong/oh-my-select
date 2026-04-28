@@ -136,21 +136,23 @@ describe("appendPluginBridgeSession", () => {
   it("adds the bridge session while preserving existing query params", () => {
     expect(
       appendPluginBridgeSession(
-        "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=abc",
+        "oms-plugin://localhost/quick-search/popup.html?viewKind=popup&selectionId=abc",
         "session-1"
       )
     ).toBe(
-      "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=abc&bridgeSession=session-1"
+      "oms-plugin://localhost/quick-search/popup.html?viewKind=popup&selectionId=abc&bridgeSession=session-1"
     )
   })
 
   it("replaces stale bridge session params", () => {
     expect(
       appendPluginBridgeSession(
-        "oms-plugin://quick-search/settings.html?bridgeSession=old",
+        "oms-plugin://localhost/quick-search/settings.html?bridgeSession=old",
         "session-2"
       )
-    ).toBe("oms-plugin://quick-search/settings.html?bridgeSession=session-2")
+    ).toBe(
+      "oms-plugin://localhost/quick-search/settings.html?bridgeSession=session-2"
+    )
   })
 
   it("throws for non-plugin URLs", () => {

@@ -64,7 +64,9 @@ function isOklchColor(value) {
   return (
     args !== null &&
     args.channels.length === 3 &&
-    args.channels.every(isFiniteNumber) &&
+    isOklchLightness(args.channels[0]) &&
+    isOklchChroma(args.channels[1]) &&
+    isFiniteNumber(args.channels[2]) &&
     isOptionalAlpha(args.alpha)
   )
 }
@@ -148,6 +150,16 @@ function isPercent(value) {
 
   const numeric = parseDecimal(value.slice(0, -1))
   return Number.isFinite(numeric) && numeric >= 0 && numeric <= 100
+}
+
+function isOklchLightness(value) {
+  const numeric = parseDecimal(value)
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1
+}
+
+function isOklchChroma(value) {
+  const numeric = parseDecimal(value)
+  return Number.isFinite(numeric) && numeric >= 0
 }
 
 function isFiniteNumber(value) {

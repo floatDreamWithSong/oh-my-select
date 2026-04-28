@@ -38,8 +38,6 @@ pub enum PluginProtocolError {
     Io(#[from] std::io::Error),
     #[error("failed to build plugin protocol response: {0}")]
     Http(#[from] http::Error),
-    #[error("plugin entry is not an HTML document")]
-    NotHtml,
 }
 
 #[derive(Debug)]
@@ -58,7 +56,6 @@ pub fn register_plugin_protocol<R: tauri::Runtime>(
     builder.register_asynchronous_uri_scheme_protocol("oms-plugin", |ctx, request, responder| {
         let app = ctx.app_handle().clone();
         let uri = request.uri().to_string();
-
         tauri::async_runtime::spawn_blocking(move || {
             let response =
                 handle_plugin_protocol_request(&app, &uri).unwrap_or_else(error_response);
@@ -169,18 +166,6 @@ fn handle_plugin_protocol_request<R: tauri::Runtime>(
     response(StatusCode::OK, resource.content_type, resource.body)
 }
 
-pub fn plugin_view_html_for_entry_url<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    entry_url: &str,
-) -> Result<String, PluginProtocolError> {
-    let resource = load_plugin_resource(app, entry_url)?;
-    if resource.content_type.starts_with("text/html") {
-        String::from_utf8(resource.body).map_err(PluginProtocolError::Decode)
-    } else {
-        Err(PluginProtocolError::NotHtml)
-    }
-}
-
 struct PluginResource {
     content_type: &'static str,
     body: Vec<u8>,
@@ -261,16 +246,20 @@ fn installed_plugin_for_request(
 
 fn parse_plugin_protocol_uri(uri: &str) -> Result<PluginProtocolRequest, PluginProtocolError> {
     let url = Url::parse(uri)?;
-    let plugin_id = url
-        .host_str()
-        .filter(|host| !host.is_empty())
-        .ok_or(PluginProtocolError::MissingPluginId)?
-        .to_string();
-    if !is_valid_plugin_id(&plugin_id) {
+    if url.host_str() != Some("localhost") {
         return Err(PluginProtocolError::InvalidPluginId);
     }
     let raw_path = raw_plugin_path_from_uri(uri).ok_or(PluginProtocolError::InvalidPath)?;
     let decoded_path = urlencoding::decode(raw_path)?.into_owned();
+    let (plugin_id, decoded_path) = decoded_path
+        .split_once('/')
+        .filter(|(plugin_id, path)| !plugin_id.is_empty() && !path.is_empty())
+        .ok_or(PluginProtocolError::InvalidPath)?;
+    let plugin_id = plugin_id.to_string();
+    if !is_valid_plugin_id(&plugin_id) {
+        return Err(PluginProtocolError::InvalidPluginId);
+    }
+    let decoded_path = decoded_path.to_string();
     let file_path =
         sanitize_plugin_file_path(&decoded_path).ok_or(PluginProtocolError::InvalidPath)?;
     let view_kind = url
@@ -473,11 +462,24 @@ mod tests {
     #[test]
     fn parses_bridge_session_from_query() {
         let request = parse_plugin_protocol_uri(
-            "oms-plugin://quick-search/popup.html?viewKind=popup&selectionId=1&bridgeSession=session-1",
+            "oms-plugin://localhost/quick-search/popup.html?viewKind=popup&selectionId=1&bridgeSession=session-1",
         )
         .unwrap();
 
+        assert_eq!(request.plugin_id, "quick-search");
+        assert_eq!(request.file_path, PathBuf::from("popup.html"));
         assert_eq!(request.bridge_session, Some("session-1".to_string()));
+    }
+
+    #[test]
+    fn parses_plugin_asset_request_from_path() {
+        let request =
+            parse_plugin_protocol_uri("oms-plugin://localhost/color-converter/color-core.js")
+                .unwrap();
+
+        assert_eq!(request.plugin_id, "color-converter");
+        assert_eq!(request.file_path, PathBuf::from("color-core.js"));
+        assert_eq!(request.content_path, "color-core.js");
     }
 
     #[test]
@@ -486,6 +488,7 @@ mod tests {
             content_type_for_path("popup.html"),
             "text/html; charset=utf-8"
         );
+        assert_eq!(content_type_for_path("color-core.js"), "text/javascript");
         assert_eq!(content_type_for_path("style.css"), "text/css");
         assert_eq!(content_type_for_path("icon.png"), "image/png");
     }
@@ -506,13 +509,13 @@ mod tests {
 
     #[test]
     fn rejects_invalid_plugin_id_hosts() {
-        assert!(parse_plugin_protocol_uri("oms-plugin://../popup.html").is_err());
-        assert!(parse_plugin_protocol_uri("oms-plugin://quick.search/popup.html").is_err());
+        assert!(parse_plugin_protocol_uri("oms-plugin://quick-search/popup.html").is_err());
+        assert!(parse_plugin_protocol_uri("oms-plugin://localhost/quick.search/popup.html").is_err());
     }
 
     #[test]
     fn rejects_encoded_traversal_paths() {
-        assert!(parse_plugin_protocol_uri("oms-plugin://quick-search/%2e%2e/secret.txt").is_err());
+        assert!(parse_plugin_protocol_uri("oms-plugin://localhost/quick-search/%2e%2e/secret.txt").is_err());
     }
 
     #[test]

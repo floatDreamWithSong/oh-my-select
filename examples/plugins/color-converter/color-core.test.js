@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest"
-import {
-  colorToCss,
-  formatColorOutputs,
-  parseColor,
-} from "./color-core.js"
+import "./color-core.js"
+
+const { parseColor, formatColorOutputs, colorToCss } =
+  globalThis.ohMySelectColorCore
 
 describe("color core", () => {
   it("parses HEX case-insensitively and outputs uppercase HEX", () => {
@@ -58,6 +57,9 @@ describe("color core", () => {
     expect(parseColor("rgb(0x22 197 94)")).toBeNull()
     expect(parseColor("rgba(34, 197, 94, 0x1)")).toBeNull()
     expect(parseColor("oklch(0x1 0.19 149.6)")).toBeNull()
+    expect(parseColor("oklch(-0.1 0.19 149.6)")).toBeNull()
+    expect(parseColor("oklch(2 0.19 149.6)")).toBeNull()
+    expect(parseColor("oklch(0.72 -0.19 149.6)")).toBeNull()
     expect(parseColor("rgb(34,,197,94)")).toBeNull()
     expect(parseColor("rgb(34,197,94,)")).toBeNull()
     expect(parseColor("rgb(34,197,94,0.5,0.6)")).toBeNull()

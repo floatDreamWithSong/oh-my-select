@@ -186,13 +186,10 @@
   </head>
   <body>
     <main id="app"></main>
-    <script type="module">
-      import {
-        colorToCss,
-        formatColorOutputs,
-        parseColor,
-      } from "./color-core.js";
-
+    <script src="./color-core.js"></script>
+    <script>
+      const { colorToCss, formatColorOutputs, parseColor } =
+        window.ohMySelectColorCore;
       const host = window.ohMySelect || {
         context: {
           selectedText: "#22c55e",
