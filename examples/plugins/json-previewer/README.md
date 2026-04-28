@@ -48,6 +48,25 @@ Indentation accepts integer values from `0` through `8`. The default is `2`, and
 1. Run the app with `bun run tauri dev`.
 2. Open Settings from the tray.
 3. Import this folder.
-4. Select one supported value in another application.
-5. Confirm the popup shows formatted JSON and deserialized and serialized copy rows.
-6. Click each copy button and confirm the row reports `Copied`.
+4. Open the JSON Previewer plugin settings.
+5. Confirm the indentation setting defaults to `2`.
+6. Save representative indentation values such as `0`, `2`, and `4`, reopening settings after each save to confirm the value persists.
+7. Try invalid indentation values outside `0` through `8` and confirm they are not saved.
+8. Select one supported value in another application.
+9. Confirm the popup shows formatted JSON and deserialized and serialized copy rows.
+10. Select rejected inputs such as `[1]`, `true`, `{ broken`, `{ "a": 1, }`, and `prefix {"a":1}` and confirm the plugin does not match.
+11. With indentation `2`, copy deserialized output for `{"a":1}` and confirm the clipboard contains formatted object JSON:
+
+```json
+{
+  "a": 1
+}
+```
+
+12. Copy serialized output for `{"a":1}` and confirm the clipboard contains the compact JSON string literal:
+
+```json
+"{\"a\":1}"
+```
+
+13. Confirm the shared status reports `Copied` after copy actions.
