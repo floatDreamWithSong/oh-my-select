@@ -17,6 +17,33 @@ describe("json previewer settings", () => {
       expect(dom.window.document.body.textContent).toContain(
         "Indent size (0-8 spaces)"
       )
+      const input = dom.window.document.getElementById("indent")
+      expect(input.value).toBe("2")
+      expect(input.getAttribute("aria-describedby")).toBe("hint")
+    } finally {
+      dom?.window.close()
+    }
+  })
+
+  it("falls back to 2 when storage read fails", async () => {
+    let dom
+
+    try {
+      ;({ dom } = await loadSettings({ locale: "en", rejectGet: true }))
+
+      expect(dom.window.document.getElementById("indent").value).toBe("2")
+    } finally {
+      dom?.window.close()
+    }
+  })
+
+  it("falls back to 2 when storage contains an invalid indent size", async () => {
+    const stored = { indentSize: 9 }
+    let dom
+
+    try {
+      ;({ dom } = await loadSettings({ locale: "en", stored }))
+
       expect(dom.window.document.getElementById("indent").value).toBe("2")
     } finally {
       dom?.window.close()
@@ -45,16 +72,18 @@ describe("json previewer settings", () => {
 
   it("rejects invalid indent sizes without overwriting storage", async () => {
     const stored = { indentSize: 2 }
+    let storageSet
     let dom
 
     try {
-      ;({ dom } = await loadSettings({ locale: "en", stored }))
+      ;({ dom, storageSet } = await loadSettings({ locale: "en", stored }))
 
       dom.window.document.getElementById("indent").value = "9"
       dom.window.document.getElementById("save").click()
       await flushTimers(dom.window)
 
       expect(stored.indentSize).toBe(2)
+      expect(storageSet).not.toHaveBeenCalled()
       expect(dom.window.document.getElementById("status").textContent).toBe(
         "Enter an integer from 0 to 8"
       )
@@ -72,6 +101,7 @@ describe("json previewer settings", () => {
       const text = dom.window.document.body.textContent
       expect(text).toContain("JSON 预览器设置")
       expect(text).toContain("缩进大小（0-8 个空格）")
+      expect(dom.window.document.documentElement.lang).toBe("zh-CN")
       expect(dom.window.document.getElementById("save").textContent).toBe(
         "保存"
       )
@@ -81,8 +111,18 @@ describe("json previewer settings", () => {
   })
 })
 
-async function loadSettings({ locale, stored = {} }) {
+async function loadSettings({ locale, stored = {}, rejectGet = false }) {
   const errors = []
+  const storageGet = vi.fn((key) => {
+    if (rejectGet) {
+      return Promise.reject(new Error("storage unavailable"))
+    }
+    return Promise.resolve(stored[key])
+  })
+  const storageSet = vi.fn((key, value) => {
+    stored[key] = value
+    return Promise.resolve()
+  })
   const virtualConsole = new VirtualConsole()
   virtualConsole.on("jsdomError", (error) => errors.push(error.message))
 
@@ -97,11 +137,8 @@ async function loadSettings({ locale, stored = {} }) {
           locale,
         },
         storage: {
-          get: vi.fn((key) => Promise.resolve(stored[key])),
-          set: vi.fn((key, value) => {
-            stored[key] = value
-            return Promise.resolve()
-          }),
+          get: storageGet,
+          set: storageSet,
         },
       }
     },
@@ -111,7 +148,7 @@ async function loadSettings({ locale, stored = {} }) {
   await flushTimers(dom.window)
 
   expect(errors).toEqual([])
-  return { dom, stored }
+  return { dom, storageGet, storageSet, stored }
 }
 
 function waitForLoad(window) {
