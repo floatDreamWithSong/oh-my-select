@@ -27,3 +27,4 @@ Included examples:
 - `quick-search`: accepts non-empty selected text, displays it, and opens a configurable search URL.
 - `color-converter`: accepts supported CSS color values, previews the color, and copies HEX, RGB, HSL, or OKLCH output.
 - `time-converter`: accepts supported time values and copies Unix seconds, milliseconds, ISO UTC, local, or RFC 2822 output.
+- `json-previewer`: accepts JSON objects and serialized JSON object strings, previews formatted JSON, and copies deserialized or serialized JSON output.

@@ -318,6 +318,22 @@ mod tests {
     }
 
     #[test]
+    fn repository_json_previewer_matcher_runs_in_quickjs() {
+        let root = example_plugins_root();
+        let engine = PluginEngine::new(root);
+        let plugin = example_plugin("json-previewer", 460, 420);
+
+        assert!(engine
+            .match_plugin(&plugin, r#"{"name":"oh-my-select"}"#, "en")
+            .unwrap());
+        assert!(engine
+            .match_plugin(&plugin, r#""{\"name\":\"oh-my-select\"}""#, "en")
+            .unwrap());
+        assert!(!engine.match_plugin(&plugin, "[1,2,3]", "en").unwrap());
+        assert!(!engine.match_plugin(&plugin, "hello", "en").unwrap());
+    }
+
+    #[test]
     fn skips_disabled_plugins() {
         let root = temp_dir("disabled");
         let plugins = vec![
