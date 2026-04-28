@@ -125,6 +125,8 @@ pub struct PopupPayload {
     pub plugin: InstalledPlugin,
     pub context: PluginViewContext,
     pub entry_url: String,
+    pub plugin_html: String,
+    pub bridge_session: String,
 }
 
 pub type PluginStorageMap = BTreeMap<String, serde_json::Value>;
