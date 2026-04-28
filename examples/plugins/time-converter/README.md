@@ -7,11 +7,13 @@ Example oh-my-select plugin for selected time values.
 - Unix seconds: exactly 10 digits, such as `1714298400`
 - Milliseconds: exactly 13 digits, such as `1714298400000`
 - Local date: `2026-04-28`, parsed as local midnight
-- Local date time: `2026-04-28 10:30:00`, parsed in the system local timezone
+- Local date time: `2026-04-28 10:30:00`, `2026-04-28T10:30:00`, or `2026/04/28 10:30:00`, parsed in the system local timezone
 - Timezone-aware ISO: `2026-04-28T10:30:00Z` or `2026-04-28T10:30:00+08:00`
+- Named-month date: `April 28, 2026`, parsed as local midnight
+- Named-month date time: `April 28, 2026 10:30:00` parsed locally, or `April 28, 2026 10:30:00 +08:00` parsed with the supplied offset
 - RFC-style time: `Tue, 28 Apr 2026 10:30:00 GMT`
 
-Ambiguous numeric values such as `123456`, year-only values such as `2026`, impossible dates such as `2026-02-30`, and natural-language values such as `tomorrow` are not supported.
+Ambiguous numeric values such as `123456`, year-only values such as `2026`, impossible dates such as `2026-02-30`, and relative or free-form natural-language values such as `tomorrow` are not supported.
 
 ## Output Formats
 
@@ -29,8 +31,12 @@ Ambiguous numeric values such as `123456`, year-only values such as `2026`, impo
 1714298400000
 2026-04-28
 2026-04-28 10:30:00
+2026-04-28T10:30:00
+2026/04/28 10:30:00
 2026-04-28T10:30:00Z
 2026-04-28T10:30:00+08:00
+April 28, 2026
+April 28, 2026 10:30:00 +08:00
 Tue, 28 Apr 2026 10:30:00 GMT
 ```
 
