@@ -92,7 +92,14 @@
       <h1 id="title">JSON Previewer Settings</h1>
       <label for="indent">
         <span id="indent-label">Indent size (0-8 spaces)</span>
-        <input id="indent" type="number" min="0" max="8" step="1" />
+        <input
+          id="indent"
+          type="number"
+          min="0"
+          max="8"
+          step="1"
+          aria-describedby="hint"
+        />
       </label>
       <p id="hint" class="hint">
         Controls how many spaces are used when previewing formatted JSON.
@@ -105,6 +112,7 @@
       const host = window.ohMySelect
       const core = window.ohMySelectJsonCore
       const locale = host.context?.locale === "zh-CN" ? "zh-CN" : "en"
+      document.documentElement.lang = locale
       const messages = {
         en: {
           title: "JSON Previewer Settings",
