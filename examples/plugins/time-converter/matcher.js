@@ -316,14 +316,24 @@ function hasValidIsoDateParts(value) {
     return true
   }
 
-  const year = Number(matchResult[1])
-  const month = Number(matchResult[2])
-  const day = Number(matchResult[3])
-  const hour = matchResult[4] === undefined ? 0 : Number(matchResult[4])
-  const minute = matchResult[5] === undefined ? 0 : Number(matchResult[5])
-  const second = matchResult[6] === undefined ? 0 : Number(matchResult[6])
-  const millisecond =
-    matchResult[7] === undefined ? 0 : Number(matchResult[7].padEnd(3, "0"))
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText = "0",
+    secondText = "0",
+    millisecondText = "0",
+  ] = matchResult
+
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const hour = Number(hourText)
+  const minute = Number(minuteText)
+  const second = Number(secondText)
+  const millisecond = Number(millisecondText.padEnd(3, "0"))
 
   return (
     isValidDateParts(year, month, day) &&
