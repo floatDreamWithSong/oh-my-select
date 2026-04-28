@@ -8,51 +8,69 @@ const pluginDir = dirname(fileURLToPath(import.meta.url))
 
 describe("json previewer popup", () => {
   it("renders direct object JSON with stored indentation", async () => {
-    const dom = await loadPopup({
-      selectedText: '{"name":"oh-my-select","enabled":true}',
-      locale: "en",
-      storageValue: 4,
-    })
+    let dom
 
-    const text = dom.window.document.body.textContent
-    expect(text).toContain("JSON Previewer")
-    expect(text).toContain("JSON object")
-    expect(text).toContain('"name": "oh-my-select"')
-    expect(text).toContain("Copy deserialized JSON")
-    expect(text).toContain("Copy serialized JSON")
-    expect(dom.window.document.querySelector("code").textContent).toContain(
-      '    "name": "oh-my-select"'
-    )
-    expect(dom.window.document.querySelector(".preview").tabIndex).toBe(0)
-    expect(
-      dom.window.document.querySelector(".actions").hasAttribute("aria-label")
-    ).toBe(false)
+    try {
+      dom = await loadPopup({
+        selectedText: '{"name":"oh-my-select","enabled":true}',
+        locale: "en",
+        storageValue: 4,
+      })
+
+      const text = dom.window.document.body.textContent
+      expect(text).toContain("JSON Previewer")
+      expect(text).toContain("JSON object")
+      expect(text).toContain('"name": "oh-my-select"')
+      expect(text).toContain("Copy deserialized JSON")
+      expect(text).toContain("Copy serialized JSON")
+      expect(dom.window.document.querySelector("code").textContent).toContain(
+        '    "name": "oh-my-select"'
+      )
+      expect(dom.window.document.querySelector(".preview").tabIndex).toBe(0)
+      expect(
+        dom.window.document.querySelector(".actions").hasAttribute("aria-label")
+      ).toBe(false)
+    } finally {
+      dom?.window.close()
+    }
   })
 
   it("renders serialized JSON string input as the decoded object", async () => {
     const selectedText = JSON.stringify(JSON.stringify({ a: 1 }))
-    const dom = await loadPopup({
-      selectedText,
-      locale: "en",
-      storageValue: 2,
-    })
+    let dom
 
-    const text = dom.window.document.body.textContent
-    expect(text).toContain("Serialized JSON string")
-    expect(text).toContain('"a": 1')
+    try {
+      dom = await loadPopup({
+        selectedText,
+        locale: "en",
+        storageValue: 2,
+      })
+
+      const text = dom.window.document.body.textContent
+      expect(text).toContain("Serialized JSON string")
+      expect(text).toContain('"a": 1')
+    } finally {
+      dom?.window.close()
+    }
   })
 
   it("renders Chinese labels", async () => {
-    const dom = await loadPopup({
-      selectedText: '{"name":"oh-my-select"}',
-      locale: "zh-CN",
-      storageValue: 2,
-    })
+    let dom
 
-    const text = dom.window.document.body.textContent
-    expect(text).toContain("JSON 预览器")
-    expect(text).toContain("复制反序列化 JSON")
-    expect(text).toContain("复制序列化 JSON")
+    try {
+      dom = await loadPopup({
+        selectedText: '{"name":"oh-my-select"}',
+        locale: "zh-CN",
+        storageValue: 2,
+      })
+
+      const text = dom.window.document.body.textContent
+      expect(text).toContain("JSON 预览器")
+      expect(text).toContain("复制反序列化 JSON")
+      expect(text).toContain("复制序列化 JSON")
+    } finally {
+      dom?.window.close()
+    }
   })
 })
 
