@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { SystemSettings } from "../system-settings"
 import type { AppSettingsSnapshot } from "@/lib/tauri-api"
 import {
+  importBundledPlugins,
   importPluginFolder,
+  listBundledPlugins,
   removePlugin,
   setLanguagePreference,
   setPluginEnabled,
@@ -32,7 +34,9 @@ if (typeof document === "undefined") {
 }
 
 vi.mock("@/lib/tauri-api", () => ({
+  importBundledPlugins: vi.fn(),
   importPluginFolder: vi.fn(),
+  listBundledPlugins: vi.fn(),
   removePlugin: vi.fn(),
   setLanguagePreference: vi.fn(),
   setPluginEnabled: vi.fn(),
@@ -44,7 +48,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }))
 
 const tauriApi = {
+  importBundledPlugins: importBundledPlugins as ReturnType<typeof vi.fn>,
   importPluginFolder: importPluginFolder as ReturnType<typeof vi.fn>,
+  listBundledPlugins: listBundledPlugins as ReturnType<typeof vi.fn>,
   removePlugin: removePlugin as ReturnType<typeof vi.fn>,
   setLanguagePreference: setLanguagePreference as ReturnType<typeof vi.fn>,
   setPluginEnabled: setPluginEnabled as ReturnType<typeof vi.fn>,
@@ -118,8 +124,11 @@ describe("SystemSettings", () => {
 
     await waitFor(() => {
       expect(
-        (getByRole("button", { name: "Import Plugin" }) as HTMLButtonElement)
-          .disabled
+        (
+          getByRole("button", {
+            name: "Import Custom Plugin",
+          }) as HTMLButtonElement
+        ).disabled
       ).toBe(true)
       expect((getByLabelText("Language") as HTMLSelectElement).disabled).toBe(
         true
@@ -129,6 +138,70 @@ describe("SystemSettings", () => {
           (button) => (button as HTMLButtonElement).disabled
         )
       ).toBe(true)
+    })
+  })
+
+  it("opens bundled plugin dialog and imports selected plugins", async () => {
+    tauriApi.listBundledPlugins.mockResolvedValueOnce([
+      {
+        id: "json-previewer",
+        manifest: {
+          id: "json-previewer",
+          name: { en: "JSON Previewer", "zh-CN": "JSON 预览" },
+          version: "0.1.0",
+          matcher: "matcher.js",
+          popup: { entry: "popup.html", width: 360, height: 260 },
+          permissions: { openExternal: false, storage: true },
+        },
+      },
+      {
+        id: "quick-search",
+        manifest: snapshot.plugins[0]!.manifest,
+      },
+    ])
+    tauriApi.importBundledPlugins.mockResolvedValueOnce({
+      ...snapshot,
+      plugins: [
+        ...snapshot.plugins,
+        {
+          id: "json-previewer",
+          enabled: true,
+          hasSettings: false,
+          manifest: {
+            id: "json-previewer",
+            name: { en: "JSON Previewer", "zh-CN": "JSON 预览" },
+            version: "0.1.0",
+            matcher: "matcher.js",
+            popup: { entry: "popup.html", width: 360, height: 260 },
+            permissions: { openExternal: false, storage: true },
+          },
+        },
+      ],
+    })
+    const onSnapshotChange = vi.fn()
+
+    const { findByRole, getByLabelText, getByRole } = render(
+      <SystemSettings
+        snapshot={snapshot}
+        onSnapshotChange={onSnapshotChange}
+      />
+    )
+
+    fireEvent.click(getByRole("button", { name: "Import Built-in Plugin" }))
+
+    expect((await findByRole("dialog")).textContent).toContain("JSON Previewer")
+    expect((getByLabelText("Quick Search") as HTMLInputElement).disabled).toBe(
+      true
+    )
+
+    fireEvent.click(getByLabelText("JSON Previewer"))
+    fireEvent.click(getByRole("button", { name: "Import Selected" }))
+
+    await waitFor(() => {
+      expect(tauriApi.importBundledPlugins).toHaveBeenCalledWith([
+        "json-previewer",
+      ])
+      expect(onSnapshotChange).toHaveBeenCalled()
     })
   })
 })

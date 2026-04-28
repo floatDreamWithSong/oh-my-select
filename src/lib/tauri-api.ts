@@ -31,6 +31,11 @@ export type InstalledPlugin = {
   hasSettings: boolean
 }
 
+export type BundledPlugin = {
+  id: string
+  manifest: InstalledPlugin["manifest"]
+}
+
 export type AppSettingsSnapshot = {
   languagePreference: LanguagePreference
   locale: "zh-CN" | "en"
@@ -50,6 +55,14 @@ export function setLanguagePreference(languagePreference: LanguagePreference) {
 
 export function importPluginFolder(path: string) {
   return invoke<AppSettingsSnapshot>("import_plugin_folder", { path })
+}
+
+export function listBundledPlugins() {
+  return invoke<Array<BundledPlugin>>("list_bundled_plugins")
+}
+
+export function importBundledPlugins(pluginIds: Array<string>) {
+  return invoke<AppSettingsSnapshot>("import_bundled_plugins", { pluginIds })
 }
 
 export function setPluginEnabled(pluginId: string, enabled: boolean) {

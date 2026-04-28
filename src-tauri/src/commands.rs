@@ -1,15 +1,20 @@
 use crate::app_state::AppState;
 use crate::models::{
-    AppSettingsSnapshot, InstalledPlugin, LanguagePreference, PluginSettingsPayload, PopupPayload,
+    AppSettingsSnapshot, BundledPlugin, InstalledPlugin, LanguagePreference, PluginSettingsPayload,
+    PopupPayload,
 };
 use crate::plugin_engine::build_view_context;
 use crate::plugin_protocol::plugin_view_html_for_entry_url;
 use crate::plugin_registry::PluginRegistry;
 use crate::popup_manager::close_selection_popup;
 use serde_json::Value;
+use std::path::Path;
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
+
+const BUNDLED_PLUGINS_RESOURCE: &str = "../examples/plugins";
 
 #[tauri::command]
 pub fn get_settings_snapshot(app: AppHandle) -> Result<AppSettingsSnapshot, String> {
@@ -53,6 +58,25 @@ pub fn import_plugin_folder(app: AppHandle, path: String) -> Result<AppSettingsS
     let registry = PluginRegistry::new(state.settings.clone());
     registry
         .import_folder(std::path::Path::new(&path))
+        .map_err(|error| error.to_string())?;
+    get_settings_snapshot(app)
+}
+
+#[tauri::command]
+pub fn list_bundled_plugins(app: AppHandle) -> Result<Vec<BundledPlugin>, String> {
+    let resource_dir = bundled_plugins_dir(&app)?;
+    list_bundled_plugins_from_dir(&resource_dir).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn import_bundled_plugins(
+    app: AppHandle,
+    plugin_ids: Vec<String>,
+) -> Result<AppSettingsSnapshot, String> {
+    let state = app.state::<AppState>();
+    let registry = PluginRegistry::new(state.settings.clone());
+    let resource_dir = bundled_plugins_dir(&app)?;
+    import_bundled_plugins_from_dir(&registry, &resource_dir, plugin_ids)
         .map_err(|error| error.to_string())?;
     get_settings_snapshot(app)
 }
@@ -295,6 +319,41 @@ mod tests {
     use crate::models::{
         LocalizedText, PluginManifest, PluginPermissions, PopupManifest, SettingsManifest,
     };
+    use crate::settings_manager::SettingsManager;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "oh-my-select-commands-test-{}-{}",
+            name,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_bundled_plugin(root: &Path, id: &str, name: &str) {
+        let plugin_dir = root.join(id);
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(
+            plugin_dir.join("manifest.json"),
+            format!(
+                r#"{{
+  "id": "{id}",
+  "name": {{ "en": "{name}" }},
+  "version": "0.1.0",
+  "matcher": "matcher.js",
+  "popup": {{ "entry": "popup.html", "width": 320, "height": 180 }},
+  "permissions": {{ "storage": true }}
+}}"#
+            ),
+        )
+        .unwrap();
+        fs::write(plugin_dir.join("matcher.js"), "export default () => true").unwrap();
+        fs::write(plugin_dir.join("popup.html"), "<!doctype html>").unwrap();
+    }
 
     fn plugin(storage: bool, open_external: bool) -> InstalledPlugin {
         InstalledPlugin {
@@ -384,4 +443,97 @@ mod tests {
             assert!(require_allowed_external_url(url).is_err());
         }
     }
+
+    #[test]
+    fn lists_valid_bundled_plugins_from_resource_dir() {
+        let resource_dir = temp_dir("list-bundled");
+        write_bundled_plugin(&resource_dir, "json-previewer", "JSON Previewer");
+        write_bundled_plugin(&resource_dir, "quick-search", "Quick Search");
+
+        let plugins = list_bundled_plugins_from_dir(&resource_dir).unwrap();
+
+        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins[0].id, "json-previewer");
+        assert_eq!(
+            plugins[0].manifest.name.en.as_deref(),
+            Some("JSON Previewer")
+        );
+        assert_eq!(plugins[1].id, "quick-search");
+    }
+
+    #[test]
+    fn imports_selected_bundled_plugins_into_registry() {
+        let resource_dir = temp_dir("import-bundled-resource");
+        let app_dir = temp_dir("import-bundled-app");
+        write_bundled_plugin(&resource_dir, "json-previewer", "JSON Previewer");
+        write_bundled_plugin(&resource_dir, "quick-search", "Quick Search");
+        let registry = PluginRegistry::new(SettingsManager::new(app_dir));
+
+        import_bundled_plugins_from_dir(&registry, &resource_dir, vec!["quick-search".to_string()])
+            .unwrap();
+
+        let plugins = registry.list_plugins().unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].id, "quick-search");
+        assert!(registry
+            .plugin_dir("quick-search")
+            .join("popup.html")
+            .exists());
+    }
+}
+
+fn bundled_plugins_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .resolve(BUNDLED_PLUGINS_RESOURCE, BaseDirectory::Resource)
+        .map_err(|error| error.to_string())
+}
+
+fn list_bundled_plugins_from_dir(
+    resource_dir: &Path,
+) -> Result<Vec<BundledPlugin>, crate::plugin_registry::PluginRegistryError> {
+    let registry = PluginRegistry::new(crate::settings_manager::SettingsManager::new(
+        std::env::temp_dir(),
+    ));
+    let mut plugins = Vec::new();
+
+    for entry in std::fs::read_dir(resource_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+
+        let plugin_dir = entry.path();
+        let manifest = registry.read_manifest(&plugin_dir)?;
+        registry.validate_manifest(&plugin_dir, &manifest)?;
+        plugins.push(BundledPlugin {
+            id: manifest.id.clone(),
+            manifest,
+        });
+    }
+
+    plugins.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(plugins)
+}
+
+fn import_bundled_plugins_from_dir(
+    registry: &PluginRegistry,
+    resource_dir: &Path,
+    plugin_ids: Vec<String>,
+) -> Result<(), crate::plugin_registry::PluginRegistryError> {
+    let available: std::collections::HashSet<String> = list_bundled_plugins_from_dir(resource_dir)?
+        .into_iter()
+        .map(|plugin| plugin.id)
+        .collect();
+
+    for plugin_id in plugin_ids {
+        if !available.contains(&plugin_id) {
+            return Err(crate::plugin_registry::PluginRegistryError::MissingPlugin(
+                plugin_id,
+            ));
+        }
+
+        registry.import_folder(&resource_dir.join(plugin_id))?;
+    }
+
+    Ok(())
 }
