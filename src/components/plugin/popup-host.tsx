@@ -59,6 +59,8 @@ export function PopupHost({ selectionId }: { selectionId: string }) {
       entryUrl={state.payload.entryUrl}
       title={state.payload.plugin.manifest.id}
       className="h-svh w-screen border-0"
+      initialHtml={state.payload.pluginHtml}
+      initialBridgeSession={state.payload.bridgeSession}
     />
   )
 }

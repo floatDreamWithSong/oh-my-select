@@ -130,13 +130,19 @@ pub fn get_popup_payload(app: AppHandle, selection_id: String) -> Result<PopupPa
         .ok_or_else(|| "selection context not found".to_string())?;
     popup.clear();
     popup.insert(selection.clone());
+    drop(popup);
 
-    let entry_url = popup_entry_url(&selection.plugin, &selection_id);
+    let bridge_session = format!("popup-{selection_id}");
+    let entry_url = popup_entry_url(&selection.plugin, &selection_id, Some(&bridge_session));
+    let plugin_html =
+        plugin_view_html_for_entry_url(&app, &entry_url).map_err(|error| error.to_string())?;
     Ok(PopupPayload {
         selection_id,
         plugin: selection.plugin,
         context: selection.context,
         entry_url,
+        plugin_html,
+        bridge_session,
     })
 }
 
@@ -283,12 +289,17 @@ fn require_allowed_external_url(url: &str) -> Result<(), String> {
     }
 }
 
-fn popup_entry_url(plugin: &InstalledPlugin, selection_id: &str) -> String {
-    plugin_entry_url(
-        &plugin.id,
-        &plugin.manifest.popup.entry,
-        &[("viewKind", "popup"), ("selectionId", selection_id)],
-    )
+fn popup_entry_url(
+    plugin: &InstalledPlugin,
+    selection_id: &str,
+    bridge_session: Option<&str>,
+) -> String {
+    let mut query = vec![("viewKind", "popup"), ("selectionId", selection_id)];
+    if let Some(bridge_session) = bridge_session {
+        query.push(("bridgeSession", bridge_session));
+    }
+
+    plugin_entry_url(&plugin.id, &plugin.manifest.popup.entry, &query)
 }
 
 fn plugin_entry_url(plugin_id: &str, entry: &str, query: &[(&str, &str)]) -> String {
@@ -388,11 +399,23 @@ mod tests {
     fn builds_encoded_popup_entry_url() {
         let plugin = plugin(false, false);
 
-        let url = popup_entry_url(&plugin, "selection 1&next=%");
+        let url = popup_entry_url(&plugin, "selection 1&next=%", None);
 
         assert_eq!(
             url,
             "oms-plugin://localhost/quick-search/popup%20dir/index%20100%25.html?viewKind=popup&selectionId=selection%201%26next%3D%25"
+        );
+    }
+
+    #[test]
+    fn builds_popup_entry_url_with_bridge_session() {
+        let plugin = plugin(false, false);
+
+        let url = popup_entry_url(&plugin, "selection-1", Some("session-1"));
+
+        assert_eq!(
+            url,
+            "oms-plugin://localhost/quick-search/popup%20dir/index%20100%25.html?viewKind=popup&selectionId=selection-1&bridgeSession=session-1"
         );
     }
 

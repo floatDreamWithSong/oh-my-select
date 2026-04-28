@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest"
-import { PLUGIN_IFRAME_SANDBOX, buildPluginFrameEntryUrl } from "../plugin-frame"
+import { describe, expect, it, vi } from "vitest"
+import {
+  PLUGIN_IFRAME_SANDBOX,
+  buildPluginFrameEntryUrl,
+  shouldFetchPluginFrameHtml,
+} from "../plugin-frame"
+
+vi.mock("@/lib/tauri-api", () => ({
+  bridgeClosePopup: vi.fn(),
+  bridgeOpenExternal: vi.fn(),
+  getPluginViewHtml: vi.fn(),
+  pluginStorageGet: vi.fn(),
+  pluginStorageRemove: vi.fn(),
+  pluginStorageSet: vi.fn(),
+}))
 
 describe("PluginFrame", () => {
   it("does not allow custom protocols to trigger top-level navigation", () => {
@@ -17,5 +30,10 @@ describe("PluginFrame", () => {
     expect(entryUrl).toBe(
       "oms-plugin://localhost/color-converter/popup.html?viewKind=popup&selectionId=1&bridgeSession=session-1"
     )
+  })
+
+  it("skips fetching iframe html when preloaded html is available", () => {
+    expect(shouldFetchPluginFrameHtml("<main>Ready</main>")).toBe(false)
+    expect(shouldFetchPluginFrameHtml()).toBe(true)
   })
 })

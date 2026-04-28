@@ -25,6 +25,8 @@ type PluginFrameProps = {
   entryUrl: string
   title: string
   className?: string
+  initialHtml?: string
+  initialBridgeSession?: string
 }
 
 export const PLUGIN_IFRAME_SANDBOX = "allow-scripts allow-forms"
@@ -36,23 +38,39 @@ export function buildPluginFrameEntryUrl(
   return appendPluginBridgeSession(entryUrl, bridgeSession)
 }
 
+export function shouldFetchPluginFrameHtml(initialHtml?: string) {
+  return initialHtml === undefined
+}
+
 export function PluginFrame({
   pluginId,
   viewKind,
   entryUrl,
   title,
   className,
+  initialHtml,
+  initialBridgeSession,
 }: PluginFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  const bridgeSession = useMemo(() => createBridgeSessionToken(), [entryUrl])
+  const bridgeSession = useMemo(
+    () => initialBridgeSession ?? createBridgeSessionToken(),
+    [entryUrl, initialBridgeSession]
+  )
   const pluginFrameEntryUrl = useMemo(
     () => buildPluginFrameEntryUrl(entryUrl, bridgeSession),
     [bridgeSession, entryUrl]
   )
-  const [iframeHtml, setIframeHtml] = useState("")
+  const [iframeHtml, setIframeHtml] = useState(initialHtml ?? "")
 
   useEffect(() => {
     let ignore = false
+
+    if (!shouldFetchPluginFrameHtml(initialHtml)) {
+      setIframeHtml(initialHtml)
+      return () => {
+        ignore = true
+      }
+    }
 
     setIframeHtml("")
     getPluginViewHtml(pluginFrameEntryUrl)

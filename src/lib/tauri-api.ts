@@ -94,6 +94,8 @@ export type PopupPayload = {
   plugin: InstalledPlugin
   context: PluginViewContext
   entryUrl: string
+  pluginHtml: string
+  bridgeSession: string
 }
 
 export type PluginSettingsPayload = {
