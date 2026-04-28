@@ -7,19 +7,17 @@
     "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
   const WEEKDAY_PATTERN =
     "(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
-  const NAMED_MONTH_TIME_SUFFIX_PATTERN =
-    "(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:\\s*(?:GMT|UTC|[+-]\\d{2}:?\\d{2}))?)?"
+  const NAMED_MONTH_TIME_PART_PATTERN =
+    "(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d{1,3}))?)?(?:\\s*(GMT|UTC|[+-]\\d{2}:?\\d{2}))?)?"
   const MONTH_NAME_RE = new RegExp(`\\b${MONTH_NAME_PATTERN}\\b`, "i")
   const MONTH_FIRST_DATE_RE = new RegExp(
-    `^(${MONTH_NAME_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_SUFFIX_PATTERN}$`,
+    `^(${MONTH_NAME_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_PART_PATTERN}$`,
     "i"
   )
   const DAY_FIRST_DATE_RE = new RegExp(
-    `^(?:${WEEKDAY_PATTERN},\\s*)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAME_PATTERN})(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_SUFFIX_PATTERN}$`,
+    `^(${WEEKDAY_PATTERN},\\s*)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAME_PATTERN})(?:,)?\\s+(\\d{4})${NAMED_MONTH_TIME_PART_PATTERN}$`,
     "i"
   )
-  const NAMED_MONTH_TIMEZONE_SUFFIX_RE =
-    /(?:\s|^)(?:GMT|UTC|[+-]\d{2}:?\d{2})$/i
   const MONTH_BY_NAME = {
     jan: 1,
     january: 1,
@@ -45,6 +43,22 @@
     november: 11,
     dec: 12,
     december: 12,
+  }
+  const WEEKDAY_BY_NAME = {
+    sun: 0,
+    sunday: 0,
+    mon: 1,
+    monday: 1,
+    tue: 2,
+    tuesday: 2,
+    wed: 3,
+    wednesday: 3,
+    thu: 4,
+    thursday: 4,
+    fri: 5,
+    friday: 5,
+    sat: 6,
+    saturday: 6,
   }
 
   globalThis.ohMySelectTimeCore = {
@@ -160,23 +174,18 @@
 
   function parseNamedMonthTime(value) {
     const dateParts = getNamedMonthDateParts(value)
-    if (
-      !dateParts ||
-      !isValidDateParts(dateParts.year, dateParts.month, dateParts.day)
-    ) {
+    if (!dateParts || !hasValidNamedMonthParts(dateParts)) {
       return null
     }
 
-    const date = new Date(value)
+    const date = dateFromNamedMonthParts(dateParts)
     if (!isValidDate(date)) {
       return null
     }
 
     return createTime(
       date,
-      NAMED_MONTH_TIMEZONE_SUFFIX_RE.test(value)
-        ? "timezone-string"
-        : "local-string"
+      dateParts.timezone ? "timezone-string" : "local-string"
     )
   }
 
@@ -255,15 +264,31 @@
         year: Number(monthFirstMatch[3]),
         month: monthNumberFromName(monthFirstMatch[1]),
         day: Number(monthFirstMatch[2]),
+        hour: parseOptionalNumber(monthFirstMatch[4], 0),
+        minute: parseOptionalNumber(monthFirstMatch[5], 0),
+        second: parseOptionalNumber(monthFirstMatch[6], 0),
+        millisecond: parseOptionalMillisecond(monthFirstMatch[7]),
+        timezone: monthFirstMatch[8],
+        weekday: null,
       }
     }
 
     const dayFirstMatch = DAY_FIRST_DATE_RE.exec(value)
     if (dayFirstMatch) {
+      const weekday = dayFirstMatch[1]
+        ? dayFirstMatch[1].replace(/,\s*$/, "")
+        : null
+
       return {
-        year: Number(dayFirstMatch[3]),
-        month: monthNumberFromName(dayFirstMatch[2]),
-        day: Number(dayFirstMatch[1]),
+        year: Number(dayFirstMatch[4]),
+        month: monthNumberFromName(dayFirstMatch[3]),
+        day: Number(dayFirstMatch[2]),
+        hour: parseOptionalNumber(dayFirstMatch[5], 0),
+        minute: parseOptionalNumber(dayFirstMatch[6], 0),
+        second: parseOptionalNumber(dayFirstMatch[7], 0),
+        millisecond: parseOptionalMillisecond(dayFirstMatch[8]),
+        timezone: dayFirstMatch[9],
+        weekday,
       }
     }
 
@@ -272,6 +297,114 @@
 
   function monthNumberFromName(value) {
     return MONTH_BY_NAME[value.toLowerCase()] ?? null
+  }
+
+  function hasValidNamedMonthParts(dateParts) {
+    return (
+      isValidDateParts(dateParts.year, dateParts.month, dateParts.day) &&
+      isValidTimeParts(dateParts) &&
+      isValidTimezone(dateParts.timezone) &&
+      hasMatchingWeekday(dateParts)
+    )
+  }
+
+  function dateFromNamedMonthParts(dateParts) {
+    if (dateParts.timezone) {
+      const date = new Date(
+        `${dateParts.year}-${pad2(dateParts.month)}-${pad2(
+          dateParts.day
+        )}T${pad2(dateParts.hour)}:${pad2(dateParts.minute)}:${pad2(
+          dateParts.second
+        )}.${pad3(dateParts.millisecond)}${normalizeTimezone(
+          dateParts.timezone
+        )}`
+      )
+
+      return isValidDate(date) ? date : null
+    }
+
+    const date = new Date(
+      dateParts.year,
+      dateParts.month - 1,
+      dateParts.day,
+      dateParts.hour,
+      dateParts.minute,
+      dateParts.second,
+      dateParts.millisecond
+    )
+
+    return date.getFullYear() === dateParts.year &&
+      date.getMonth() === dateParts.month - 1 &&
+      date.getDate() === dateParts.day &&
+      date.getHours() === dateParts.hour &&
+      date.getMinutes() === dateParts.minute &&
+      date.getSeconds() === dateParts.second &&
+      date.getMilliseconds() === dateParts.millisecond
+      ? date
+      : null
+  }
+
+  function isValidTimeParts({ hour, minute, second, millisecond }) {
+    return (
+      hour >= 0 &&
+      hour <= 23 &&
+      minute >= 0 &&
+      minute <= 59 &&
+      second >= 0 &&
+      second <= 59 &&
+      millisecond >= 0 &&
+      millisecond <= 999
+    )
+  }
+
+  function isValidTimezone(timezone) {
+    if (!timezone || /^(?:GMT|UTC)$/i.test(timezone)) {
+      return true
+    }
+
+    const matchResult = /^([+-])(\d{2}):?(\d{2})$/.exec(timezone)
+    if (!matchResult) {
+      return false
+    }
+
+    const hour = Number(matchResult[2])
+    const minute = Number(matchResult[3])
+    return hour <= 23 && minute <= 59
+  }
+
+  function hasMatchingWeekday(dateParts) {
+    if (!dateParts.weekday) {
+      return true
+    }
+
+    return (
+      weekdayNumberFromName(dateParts.weekday) ===
+      new Date(
+        Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)
+      ).getUTCDay()
+    )
+  }
+
+  function weekdayNumberFromName(value) {
+    return WEEKDAY_BY_NAME[value.toLowerCase()] ?? null
+  }
+
+  function normalizeTimezone(timezone) {
+    if (/^(?:GMT|UTC)$/i.test(timezone)) {
+      return "Z"
+    }
+
+    return timezone.length === 5
+      ? `${timezone.slice(0, 3)}:${timezone.slice(3)}`
+      : timezone
+  }
+
+  function parseOptionalNumber(value, fallback) {
+    return value === undefined ? fallback : Number(value)
+  }
+
+  function parseOptionalMillisecond(value) {
+    return value === undefined ? 0 : Number(value.padEnd(3, "0"))
   }
 
   function isValidDateParts(year, month, day) {
@@ -304,5 +437,9 @@
 
   function pad2(value) {
     return String(value).padStart(2, "0")
+  }
+
+  function pad3(value) {
+    return String(value).padStart(3, "0")
   }
 })()

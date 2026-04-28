@@ -129,6 +129,20 @@ describe("time core", () => {
     })
   })
 
+  it("parses named-month values with timezone as absolute time", () => {
+    const parsed = parseTime("April 28, 2026 10:30:00 UTC")
+
+    expect(parsed.sourceKind).toBe("timezone-string")
+    expect(parsed.date.toISOString()).toBe("2026-04-28T10:30:00.000Z")
+  })
+
+  it("parses named-month values with numeric offsets as absolute time", () => {
+    const parsed = parseTime("April 28, 2026 10:30:00 +08:00")
+
+    expect(parsed.sourceKind).toBe("timezone-string")
+    expect(parsed.date.toISOString()).toBe("2026-04-28T02:30:00.000Z")
+  })
+
   it("formats all output rows", () => {
     const outputs = formatTimeOutputs(parseTime("2026-04-28T10:30:00Z"))
 
@@ -158,8 +172,12 @@ describe("time core", () => {
     "2026-13-01",
     "2026-04-28 24:00:00",
     "2026-04-28 10:60:00",
+    "April 28, 2026 24:00",
+    "April 28, 2026 10:60",
+    "April 28, 2026 10:30:60",
     "April 31, 2026",
     "Feb 30 2026",
+    "Mon, 28 Apr 2026 10:30:00 GMT",
     "Tue, 31 Apr 2026 10:30:00 GMT",
     "date: 2026-04-28",
     "foo 2026-04-28",
@@ -168,6 +186,8 @@ describe("time core", () => {
     "Apr 28",
     "28 Apr",
     "April 2026",
+    "17142984000",
+    "171429840000",
     "17142984000000",
     null,
   ])("returns null for unsupported value %s", (value) => {
