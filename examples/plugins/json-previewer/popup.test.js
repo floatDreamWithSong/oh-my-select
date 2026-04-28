@@ -23,9 +23,13 @@ describe("json previewer popup", () => {
       expect(text).toContain('"name": "oh-my-select"')
       expect(text).toContain("Copy deserialized JSON")
       expect(text).toContain("Copy serialized JSON")
-      expect(dom.window.document.querySelector("code").textContent).toContain(
-        '    "name": "oh-my-select"'
+      const code = dom.window.document.querySelector("code")
+      expect(code.textContent).toContain('    "name": "oh-my-select"')
+      expect(code.querySelector(".json-key").textContent).toBe('"name"')
+      expect(code.querySelector(".json-string").textContent).toBe(
+        '"oh-my-select"'
       )
+      expect(code.querySelector(".json-boolean").textContent).toBe("true")
       expect(dom.window.document.querySelector(".preview").tabIndex).toBe(0)
       expect(
         dom.window.document.querySelector(".actions").hasAttribute("aria-label")
