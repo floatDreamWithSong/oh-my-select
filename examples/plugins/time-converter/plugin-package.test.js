@@ -25,10 +25,10 @@ describe("time converter plugin package", () => {
         width: 420,
         height: 340,
       },
-      permissions: {
-        openExternal: false,
-        storage: false,
-      },
+    })
+    expect(manifest.permissions).toEqual({
+      openExternal: false,
+      storage: false,
     })
     expect(manifest.settings).toBeUndefined()
   })
@@ -54,4 +54,32 @@ describe("time converter plugin package", () => {
     expect(popup).toContain("navigator.clipboard")
     expect(popup).toContain("document.execCommand")
   })
+
+  it("keeps the popup layout compact for the 420x340 host frame", async () => {
+    const popup = await readFile(join(pluginDir, "popup.html"), "utf8")
+    const rowRule = getCssRule(popup, ".row")
+    const buttonRule = getCssRule(popup, "button")
+    const statusRule = getCssRule(popup, ".status")
+
+    expect(cssPxValue(rowRule, "min-height")).toBeLessThanOrEqual(30)
+    expect(cssPxValue(buttonRule, "height")).toBeLessThanOrEqual(28)
+    expect(cssPxValue(statusRule, "min-height")).toBeLessThanOrEqual(12)
+  })
 })
+
+function getCssRule(css, selector) {
+  const escapedSelector = selector.replaceAll(".", "\\.")
+  const match = new RegExp(`${escapedSelector}\\s*{(?<body>[^}]+)}`, "s").exec(
+    css
+  )
+
+  expect(match?.groups?.body).toBeTruthy()
+  return match.groups.body
+}
+
+function cssPxValue(rule, property) {
+  const match = new RegExp(`${property}:\\s*(\\d+)px`).exec(rule)
+
+  expect(match?.[1]).toBeTruthy()
+  return Number(match[1])
+}
