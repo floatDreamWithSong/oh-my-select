@@ -624,7 +624,11 @@ mod tests {
         let root = temp_dir("inline-nested-scripts");
         let plugin_dir = root.join("plugin");
         fs::create_dir_all(plugin_dir.join("nested")).unwrap();
-        fs::write(plugin_dir.join("nested").join("core.js"), "window.nested = true;").unwrap();
+        fs::write(
+            plugin_dir.join("nested").join("core.js"),
+            "window.nested = true;",
+        )
+        .unwrap();
 
         let inlined = inline_script_src_tags(
             r#"<script src="./core.js"></script>"#,
@@ -664,12 +668,17 @@ mod tests {
     #[test]
     fn rejects_invalid_plugin_id_hosts() {
         assert!(parse_plugin_protocol_uri("oms-plugin://quick-search/popup.html").is_err());
-        assert!(parse_plugin_protocol_uri("oms-plugin://localhost/quick.search/popup.html").is_err());
+        assert!(
+            parse_plugin_protocol_uri("oms-plugin://localhost/quick.search/popup.html").is_err()
+        );
     }
 
     #[test]
     fn rejects_encoded_traversal_paths() {
-        assert!(parse_plugin_protocol_uri("oms-plugin://localhost/quick-search/%2e%2e/secret.txt").is_err());
+        assert!(
+            parse_plugin_protocol_uri("oms-plugin://localhost/quick-search/%2e%2e/secret.txt")
+                .is_err()
+        );
     }
 
     #[test]
@@ -717,10 +726,7 @@ mod tests {
 
         let second = matching_popup_selection(&popup, "1", "quick-search").unwrap();
 
-        assert_eq!(
-            second.context.selected_text,
-            Some("selected".to_string())
-        );
+        assert_eq!(second.context.selected_text, Some("selected".to_string()));
         assert!(popup.lock().unwrap().get("1").is_some());
     }
 
