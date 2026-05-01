@@ -195,11 +195,13 @@ pub fn show_selection_popup(
         .inner_size(popup_w, popup_h)
         .decorations(false)
         .always_on_top(true)
+        .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         .resizable(false)
         .visible(false)
         .focused(false)
         .build()?;
+    configure_selection_popup_window(&popup)?;
 
     popup.set_position(tauri::Position::Logical(LogicalPosition::new(
         position.x, position.y,
@@ -207,6 +209,57 @@ pub fn show_selection_popup(
     popup.show()?;
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn configure_selection_popup_window<R: tauri::Runtime>(
+    popup: &tauri::WebviewWindow<R>,
+) -> Result<(), PopupManagerError> {
+    let popup_for_task = popup.clone();
+    popup.run_on_main_thread(move || {
+        if let Err(error) = configure_macos_selection_popup_window(&popup_for_task) {
+            eprintln!("Failed to configure macOS selection popup window: {error}");
+        }
+    })?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn configure_macos_selection_popup_window<R: tauri::Runtime>(
+    popup: &tauri::WebviewWindow<R>,
+) -> Result<(), PopupManagerError> {
+    use objc2_app_kit::NSWindow;
+
+    let ns_window = popup.ns_window()?;
+
+    unsafe {
+        let ns_window = &*ns_window.cast::<NSWindow>();
+        ns_window.setCollectionBehavior(macos_selection_popup_collection_behavior(
+            ns_window.collectionBehavior(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_selection_popup_window<R: tauri::Runtime>(
+    _popup: &tauri::WebviewWindow<R>,
+) -> Result<(), PopupManagerError> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_selection_popup_collection_behavior(
+    current: objc2_app_kit::NSWindowCollectionBehavior,
+) -> objc2_app_kit::NSWindowCollectionBehavior {
+    use objc2_app_kit::NSWindowCollectionBehavior;
+
+    current
+        | NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::Stationary
+        | NSWindowCollectionBehavior::FullScreenAuxiliary
 }
 
 fn resolve_popup_position(
@@ -456,5 +509,18 @@ mod tests {
                 y: 210.0
             })
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_selection_popup_collection_behavior_joins_full_screen_spaces() {
+        use objc2_app_kit::NSWindowCollectionBehavior;
+
+        let behavior =
+            macos_selection_popup_collection_behavior(NSWindowCollectionBehavior::Default);
+
+        assert!(behavior.contains(NSWindowCollectionBehavior::CanJoinAllSpaces));
+        assert!(behavior.contains(NSWindowCollectionBehavior::Stationary));
+        assert!(behavior.contains(NSWindowCollectionBehavior::FullScreenAuxiliary));
     }
 }

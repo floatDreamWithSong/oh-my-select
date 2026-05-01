@@ -68,6 +68,11 @@ fn handle_window_close<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tau
     }
 }
 
+#[cfg(target_os = "macos")]
+fn macos_activation_policy_for_selection_popups() -> tauri::ActivationPolicy {
+    tauri::ActivationPolicy::Accessory
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -76,6 +81,8 @@ pub fn run() {
     builder
         .on_window_event(handle_window_close)
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(macos_activation_policy_for_selection_popups());
             tray::setup_tray(app)?;
             let state = app_state::AppState::from_app(app.handle())?;
             app.manage(state);
@@ -107,4 +114,15 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_uses_accessory_activation_policy_for_selection_popups() {
+        let policy = super::macos_activation_policy_for_selection_popups();
+
+        assert!(matches!(policy, tauri::ActivationPolicy::Accessory));
+    }
 }

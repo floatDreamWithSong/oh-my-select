@@ -4285,6 +4285,7 @@ version = "0.1.0"
 dependencies = [
  "mime_guess",
  "monio",
+ "objc2-app-kit",
  "rquickjs",
  "selection",
  "serde",
