@@ -147,7 +147,9 @@ fn evaluate_matcher(source: &str, context_json: &str) -> Result<bool, String> {
             match(__context) === true;
             "#
         );
-        ctx.eval::<bool, _>(script).catch(&ctx).map_err(format_caught_error)
+        ctx.eval::<bool, _>(script)
+            .catch(&ctx)
+            .map_err(format_caught_error)
     })
 }
 
